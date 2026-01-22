@@ -1,5 +1,14 @@
 # CLAUDE.md - Home Brain MCP Server
 
+## CRITICAL CONTEXT
+
+**USER ENVIRONMENT:**
+- The user interacts with Claude ONLY via the Claude app (mobile/web/desktop)
+- The user has **ZERO ability to edit files manually**
+- ALL file changes, configuration updates, and code edits must be done by Claude
+- Do NOT ask the user to edit files, run commands, or make manual changes
+- If credentials or configuration are needed, Claude must handle it programmatically or ask the user to provide values via chat
+
 ## Project Overview
 
 This project creates a remote MCP (Model Context Protocol) server that exposes my private `home-brain` GitHub repository to Claude via semantic search. The goal is to make my personal knowledge base accessible from Claude mobile, web, and desktop apps.
