@@ -1,0 +1,35 @@
+{
+  "name": "git-brain",
+  "version": "1.0.0",
+  "description": "An MCP server to connect Github-hosted \"Second Brain\" repos to AI clients",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:19022/git/dudgeon/git-brain"
+  },
+  "keywords": [
+    "mcp",
+    "cloudflare-workers",
+    "knowledge-base",
+    "rag",
+    "semantic-search"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250110.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.100.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "hono": "^4.7.11"
+  }
+}
