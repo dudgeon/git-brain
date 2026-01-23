@@ -24,3 +24,5 @@ binding = "AI"
 # Variables
 [vars]
 AUTORAG_NAME = "home-brain-search"
+WORKER_URL = "https://home-brain-mcp.dudgeon.workers.dev"
+GITHUB_REPO_URL = "https://github.com/dudgeon/home-brain"

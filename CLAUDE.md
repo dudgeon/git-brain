@@ -74,6 +74,37 @@ export default HomeBrainMCP.serveSSE("/mcp");
 | `list_recent` | List recently modified files | `limit?`, `path_prefix?` |
 | `list_folders` | Browse folder structure | `path?` |
 
+### HTTP Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/mcp` | MCP protocol (SSE transport) |
+| `/doc/{path}` | Direct document access - returns raw file content from R2 |
+
+### Source Links
+
+Search results include clickable GitHub links (not R2/worker links) so users can:
+- View files in the GitHub UI with proper rendering
+- See file history and blame
+- Edit files directly in GitHub
+- Navigate the repo structure
+
+Example: `https://github.com/dudgeon/home-brain/blob/main/domains/family/owen/swim/README.md`
+
+### search_brain Tool Description
+
+The `search_brain` tool has a carefully crafted description that:
+
+1. **Hard-coded base**: Explains this is a personal knowledge base, NOT general knowledge
+2. **Dynamic enrichment**: If `_brain_summary.json` exists in R2, domains/topics are added to the description
+3. **Scope boundaries**: Explicitly states what to use it for and what NOT to use it for
+4. **Non-exhaustive framing**: Dynamic topics are presented as "includes but not limited to" to prevent Claude from skipping searches when topics aren't in the summary
+
+The description guides Claude to:
+- Use search_brain for personal notes, project docs, family info
+- NOT use it for general knowledge, current events
+- Try a search if unsure whether content is in the knowledge base
+
 ### Wrangler Bindings
 
 ```toml
@@ -205,14 +236,92 @@ The `home-brain` repo has a GitHub Action (`.github/workflows/sync-to-r2.yml`) t
 
 **Expanding to all files:** Change `--include "*.md"` to exclusion-based filtering in the workflow.
 
+## Brain Summary (Dynamic Tool Metadata)
+
+The MCP server can load a `_brain_summary.json` file from R2 to enrich the `search_brain` tool description with actual content topics. This helps Claude understand when to use the tool.
+
+### Summary File Format
+
+```json
+{
+  "domains": ["family", "projects", "resources", "tools"],
+  "topics": ["kids Alina & Owen", "swim team", "schools", "home automation"],
+  "recentFiles": ["domains/family/README.md", "tasks.md"],
+  "lastUpdated": "2025-01-22T00:00:00Z"
+}
+```
+
+### Generation Strategy
+
+The summary should be regenerated **periodically** (not on every push) to avoid overhead:
+
+1. **Scheduled Action** - Runs weekly (e.g., every Sunday at midnight)
+2. **Manual trigger** - `workflow_dispatch` for on-demand regeneration
+3. **NOT on every push** - Unlike file sync, summary generation is infrequent
+
+### home-brain GitHub Action (`generate-summary.yml`)
+
+**TO BE IMPLEMENTED** in the `home-brain` repo:
+
+```yaml
+name: Generate Brain Summary
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sundays
+  workflow_dispatch:      # Manual trigger
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate summary
+        run: |
+          # Extract domains from top-level folders
+          DOMAINS=$(ls -d */ | grep -v '^\.' | sed 's/\///' | jq -R . | jq -s .)
+
+          # Extract sample topics from folder names and file titles
+          TOPICS=$(find . -name "README.md" -exec head -1 {} \; | grep "^#" | sed 's/^# //' | head -10 | jq -R . | jq -s .)
+
+          # Recent files
+          RECENT=$(ls -t **/*.md 2>/dev/null | head -5 | jq -R . | jq -s .)
+
+          # Build JSON
+          jq -n \
+            --argjson domains "$DOMAINS" \
+            --argjson topics "$TOPICS" \
+            --argjson recent "$RECENT" \
+            '{domains: $domains, topics: $topics, recentFiles: $recent, lastUpdated: now | todate}' \
+            > _brain_summary.json
+
+      - name: Upload to R2
+        run: |
+          aws s3 cp _brain_summary.json s3://home-brain-store/_brain_summary.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+```
+
+### Important: Non-Exhaustive Framing
+
+The summary is explicitly framed as **non-exhaustive** in the tool description. This prevents Claude from thinking "topic X isn't in the summary, so I shouldn't search." The description says:
+
+> "Knowledge domains include (but are not limited to): ..."
+> "Note: This is a sample - the knowledge base may contain additional topics not listed here."
+
 ## Current Status
 
-**All 5 tools working:**
+**v1.1 - Improved search_brain metadata:**
 - ✅ MCP Server deployed at `https://home-brain-mcp.dudgeon.workers.dev/mcp`
-- ✅ R2 bucket `home-brain-store` with markdown files
-- ✅ All tools working: `about`, `search_brain`, `get_document`, `list_recent`, `list_folders`
-- ✅ GitHub Action auto-syncs on push
-- ✅ AI Search semantic search functional (303 vectors indexed)
+- ✅ All 5 tools working: `about`, `search_brain`, `get_document`, `list_recent`, `list_folders`
+- ✅ `/doc/*` endpoint for direct document access with source links
+- ✅ Improved `search_brain` description with scope guidance
+- ✅ Support for `_brain_summary.json` dynamic enrichment (optional)
+- ✅ Search results include clickable source URLs
+- ⏳ `generate-summary.yml` Action not yet implemented in home-brain repo
 
 ## Proposed Next Steps
 
