@@ -26,10 +26,12 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250110.0",
     "typescript": "^5.7.2",
-    "wrangler": "^3.100.0"
+    "wrangler": "^4.60.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "hono": "^4.7.11"
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "agents": "^0.3.6",
+    "hono": "^4.7.11",
+    "zod": "^4.3.5"
   }
 }

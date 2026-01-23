@@ -1,50 +1,34 @@
-# Home Brain MCP Server
+# Git Brain
 
-A remote MCP (Model Context Protocol) server that exposes a personal knowledge base stored in a GitHub repository to Claude AI via semantic search.
-
-## Overview
-
-This project bridges your private GitHub repository with Claude (mobile, web, and desktop) using Cloudflare's infrastructure:
-
-- **Cloudflare R2** for storage
-- **Cloudflare AI Search** for semantic search and RAG
-- **Cloudflare Workers** for the MCP server runtime
-
-## Features
-
-- **Semantic Search** - Natural language queries across your entire knowledge base
-- **Document Retrieval** - Get full content of specific documents
-- **Recent Files** - List recently modified files
-- **Folder Browsing** - Navigate your knowledge base structure
-- **OAuth Authentication** - Secure access from Claude.ai
+A remote MCP server that exposes private GitHub repositories as a searchable knowledge base for Claude.
 
 ## Quick Start
 
-### Prerequisites
+### Connect to Claude.ai
+1. Settings → Connectors → Add custom connector
+2. URL: `https://home-brain-mcp.dudgeon.workers.dev/mcp`
 
-- Node.js 18+
-- Cloudflare account
-- Wrangler CLI
-
-### Installation
-
-```bash
-npm install
+### Connect Claude Code / Desktop
+Add to your MCP config:
+```json
+{
+  "mcpServers": {
+    "home-brain": {
+      "url": "https://home-brain-mcp.dudgeon.workers.dev/mcp"
+    }
+  }
+}
 ```
 
-### Local Development
+## Available Tools
 
-```bash
-npm run dev
-```
-
-This starts a local dev server at `http://localhost:8787`
-
-### Deployment
-
-```bash
-npm run deploy
-```
+| Tool | Description |
+|------|-------------|
+| `search_brain` | Semantic search across all content |
+| `get_document` | Retrieve a file by path |
+| `list_recent` | Browse recently modified files |
+| `list_folders` | Navigate folder structure |
+| `about` | Server information |
 
 ## Architecture
 
@@ -52,30 +36,26 @@ npm run deploy
 GitHub Repo → GitHub Action → R2 Bucket → AI Search → MCP Server → Claude
 ```
 
-## MCP Tools
+- **Cloudflare Workers** with Durable Objects for session state
+- **Cloudflare R2** for file storage
+- **Cloudflare AI Search** for semantic search (303 vectors indexed)
+- **Cloudflare Agents SDK** for MCP protocol
 
-The server exposes these tools to Claude:
+## Development
 
-- `search_brain` - Semantic search across all content
-- `get_document` - Retrieve a specific document by path
-- `list_recent` - List recently modified files
-- `list_folders` - Browse the knowledge base structure
+```bash
+npm install          # Install dependencies
+npm run dev          # Local development
+npm run deploy       # Deploy to Cloudflare
+node test-mcp.mjs    # Test MCP connection
+node test-tools.mjs  # Test all tools
+```
 
-## Configuration
+## Documentation
 
-See [CLAUDE.md](./CLAUDE.md) for detailed setup instructions, including:
-
-- Cloudflare infrastructure setup (R2, AI Search)
-- GitHub Actions for syncing
-- OAuth configuration
-- Wrangler bindings
+- [CLAUDE.md](./CLAUDE.md) - Implementation details and development guide
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - Common issues and solutions
 
 ## License
 
 ISC
-
-## References
-
-- [MCP Specification](https://modelcontextprotocol.io/)
-- [Cloudflare Workers](https://workers.cloudflare.com/)
-- [Cloudflare AI Search](https://developers.cloudflare.com/ai-search/)

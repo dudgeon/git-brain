@@ -1,15 +1,26 @@
 name = "home-brain-mcp"
 main = "src/index.ts"
 compatibility_date = "2025-01-22"
+compatibility_flags = ["nodejs_compat"]
 
-# Uncomment and configure these bindings when setting up Cloudflare infrastructure:
-#
-# [vars]
-# AUTORAG_NAME = "home-brain-search"
-#
-# [[r2_buckets]]
-# binding = "R2"
-# bucket_name = "home-brain-store"
-#
-# [ai]
-# binding = "AI"
+# Required for McpAgent (Durable Object based)
+[[durable_objects.bindings]]
+name = "MCP_OBJECT"
+class_name = "HomeBrainMCP"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["HomeBrainMCP"]
+
+# R2 Storage - requires R2 to be enabled in dashboard
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "home-brain-store"
+
+# AI binding for Workers AI
+[ai]
+binding = "AI"
+
+# Variables
+[vars]
+AUTORAG_NAME = "home-brain-search"
