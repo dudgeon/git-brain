@@ -54,6 +54,30 @@ AUTORAG_NAME = "home-brain-search"  # NOT "ai-search-home-brain-search"
 2. Check file exists in R2: `wrangler r2 object get home-brain-store/path/to/file.md`
 3. Trigger re-index from AI Search dashboard (5-minute cooldown between syncs)
 
+## Brain Summary Issues
+
+### Tool description missing domains/topics
+
+The `search_brain` tool description should include domains and topics from your content. If missing:
+
+1. **Check summary file exists**
+   ```bash
+   curl https://home-brain-mcp.dudgeon.workers.dev/doc/_brain_summary.json
+   ```
+
+2. **Trigger summary regeneration**
+   - Go to `home-brain` repo → Actions → Generate Brain Summary → Run workflow
+
+3. **Force Durable Object restart** - The summary is loaded when the DO initializes. A new deployment or waiting for the DO to expire (~30 seconds of inactivity) will reload it.
+
+### Summary has unbalanced topics
+
+The `generate-summary.yml` workflow samples 1-2 topics from each domain folder. If topics are still skewed:
+
+1. Check that each domain has README.md files with `# Title` headers
+2. Manually trigger the workflow to regenerate
+3. Review the workflow output in GitHub Actions logs
+
 ## GitHub Action Issues
 
 ### Sync fails with "Access Denied"
@@ -68,6 +92,12 @@ Check secrets in `home-brain` repo → Settings → Secrets → Actions:
 - Check action logs for actual sync output
 - Verify bucket name matches
 - Review `--exclude` patterns in workflow
+
+### Summary workflow fails
+
+The `generate-summary.yml` workflow requires `jq` (pre-installed on ubuntu-latest). Check:
+- Workflow has correct R2 secrets configured
+- The `aws s3 cp` command includes `--endpoint-url $AWS_ENDPOINT_URL`
 
 ## Worker Issues
 
@@ -96,6 +126,9 @@ node test-mcp.mjs
 
 # Test all tools
 node test-tools.mjs
+
+# Check brain summary
+curl https://home-brain-mcp.dudgeon.workers.dev/doc/_brain_summary.json
 
 # Check deployment
 npm run deploy

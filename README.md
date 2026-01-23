@@ -24,22 +24,37 @@ Add to your MCP config:
 
 | Tool | Description |
 |------|-------------|
-| `search_brain` | Semantic search across all content |
+| `search_brain` | Semantic search with dynamic metadata (domains, topics) |
 | `get_document` | Retrieve a file by path |
 | `list_recent` | Browse recently modified files |
 | `list_folders` | Navigate folder structure |
 | `about` | Server information |
 
+### Search Features
+
+- **Dynamic tool description** - Automatically includes knowledge domains and sample topics from your content
+- **Source links** - Search results include clickable GitHub links to view/edit files
+- **Scope guidance** - Tool description helps Claude understand when to use (and not use) the search
+
 ## Architecture
 
 ```
 GitHub Repo → GitHub Action → R2 Bucket → AI Search → MCP Server → Claude
+     │                              │
+     └── generate-summary.yml ──────┘ (weekly metadata refresh)
 ```
 
 - **Cloudflare Workers** with Durable Objects for session state
 - **Cloudflare R2** for file storage
-- **Cloudflare AI Search** for semantic search (303 vectors indexed)
+- **Cloudflare AI Search** for semantic search
 - **Cloudflare Agents SDK** for MCP protocol
+
+## HTTP Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/mcp` | MCP protocol (SSE transport) |
+| `/doc/{path}` | Direct document access from R2 |
 
 ## Development
 
