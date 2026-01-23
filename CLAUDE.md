@@ -40,12 +40,12 @@ GitHub Repo → GitHub Action → R2 Bucket → AI Search (embeddings) → MCP S
 git-brain/
 ├── CLAUDE.md              # This file - project instructions for Claude
 ├── README.md              # Public documentation
-├── SETUP_LOG.md           # Development history and decisions
 ├── TROUBLESHOOTING.md     # Common issues and solutions
 ├── wrangler.toml          # Cloudflare Worker configuration
 ├── package.json
 ├── tsconfig.json
 ├── test-mcp.mjs           # MCP connection test script
+├── test-tools.mjs         # Full tools test script
 └── src/
     └── index.ts           # Single-file MCP server implementation
 ```
@@ -214,9 +214,28 @@ The `home-brain` repo has a GitHub Action (`.github/workflows/sync-to-r2.yml`) t
 - ✅ GitHub Action auto-syncs on push
 - ✅ AI Search semantic search functional (303 vectors indexed)
 
-**Optional future work:**
-- OAuth authentication for production use
-- Expand sync to include all file types (not just markdown)
+## Proposed Next Steps
+
+### High Priority
+1. **OAuth authentication** - Currently no auth; anyone with the URL can access. Add Cloudflare Access or OAuth to restrict to authorized users.
+
+2. **Expand file sync beyond markdown** - Currently only `.md` files sync. Update GitHub Action to use exclusion-based filtering (exclude `.git`, `node_modules`, etc.) instead of `--include "*.md"`.
+
+### Medium Priority
+3. **Write tools** - Add `create_document` and `update_document` tools to allow Claude to write back to the knowledge base (would need to sync R2 → GitHub or use GitHub API directly).
+
+4. **Better search relevance** - Tune AI Search settings (chunk size, overlap, reranking) or add metadata filtering to improve result quality.
+
+5. **Observability** - Add structured logging and connect to Cloudflare Analytics or external monitoring to track usage patterns and errors.
+
+### Low Priority / Nice to Have
+6. **Multiple knowledge bases** - Support connecting multiple GitHub repos as separate "brains" with a brain selector tool.
+
+7. **Caching layer** - Add KV caching for frequently accessed documents to reduce R2 reads.
+
+8. **MCP Resources** - Expose documents as MCP resources (not just tools) for richer client integration.
+
+9. **Version history** - Track document versions and allow retrieving previous versions.
 
 ## References
 
