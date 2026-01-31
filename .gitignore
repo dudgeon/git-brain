@@ -9,6 +9,9 @@ dist/
 .env
 .dev.vars
 
+# GitHub App private keys
+*.pem
+
 # Logs
 *.log
 npm-debug.log*

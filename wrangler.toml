@@ -2,6 +2,7 @@ name = "home-brain-mcp"
 main = "src/index.ts"
 compatibility_date = "2025-01-22"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
 
 # Required for McpAgent (Durable Object based)
 [[durable_objects.bindings]]
@@ -21,8 +22,23 @@ bucket_name = "home-brain-store"
 [ai]
 binding = "AI"
 
+# D1 Database for installations
+[[d1_databases]]
+binding = "DB"
+database_name = "brain-stem-db"
+database_id = "64b1618d-90c7-43e6-b834-839ee21382ad"
+
 # Variables
 [vars]
 AUTORAG_NAME = "home-brain-search"
-WORKER_URL = "https://home-brain-mcp.dudgeon.workers.dev"
+WORKER_URL = "https://brainstem.cc"
 GITHUB_REPO_URL = "https://github.com/dudgeon/home-brain"
+GITHUB_APP_NAME = "git-brain-stem"
+CLOUDFLARE_ACCOUNT_ID = "0e0a12f91d808a8536743acc49a267cf"
+GITHUB_CLIENT_ID = "Iv23liqdmhreJX6G3ku6"
+
+# Static assets (binary imports)
+[[rules]]
+type = "Data"
+globs = ["**/*.png"]
+fallthrough = false

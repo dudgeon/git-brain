@@ -65,7 +65,7 @@ Settings → Connectors → Add custom connector → paste your endpoint URL and
 
 ## MCP Tools
 
-Brainstem exposes five tools over MCP:
+Brainstem exposes six tools over MCP:
 
 | Tool | Description |
 |------|-------------|
@@ -73,6 +73,7 @@ Brainstem exposes five tools over MCP:
 | `get_document` | Retrieve the full contents of a file by its path. |
 | `list_recent` | List recently modified files, optionally filtered by path prefix. |
 | `list_folders` | Browse the folder structure of your repo. |
+| `inbox` | Add a quick note to your inbox folder, committed directly to GitHub. |
 | `about` | Information about the Brainstem server and what it does. |
 
 ## How Sync Works
