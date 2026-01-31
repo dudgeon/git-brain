@@ -435,7 +435,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 ## Current Status
 
-**v4.2 — Webhook Fix + OAuth UX + Token Expiry:**
+**v4.3 — Connection UX + Generic MCP:**
 - ✅ All MCP endpoints require OAuth bearer token
 - ✅ Legacy `/mcp` endpoint removed
 - ✅ workers.dev domain disabled (`workers_dev = false`)
@@ -456,6 +456,9 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 - ✅ Session tokens extended to 1 year (was 30 days)
 - ✅ Webhook pipeline verified end-to-end (URL was misconfigured, now fixed)
 - ✅ GitHub App private key available locally for CLI diagnostics
+- ✅ OAuth success page redesigned with copy-button fields matching Claude.ai labels
+- ✅ Bare `/mcp` GET returns 404 with setup instructions
+- ✅ Bare `/mcp` POST serves generic about-only MCP (no brain content accessible)
 
 ## Known Limitations
 

@@ -82,6 +82,12 @@ Error responses mix plain text and JSON. Standardize on `{ "error": "code", "mes
 
 No automated tests exist. Manual test scripts (`test-mcp.mjs`, `test-user-mcp.mjs`) require a live deployment. Would benefit from unit tests for OAuth, integration tests for webhooks, and E2E tests for MCP tools.
 
+### UUID-free MCP URL
+
+Users currently need `https://brainstem.cc/mcp/{uuid}` — the UUID is ugly and requires manual copy-paste. The server should resolve the user's installation from their bearer token so Claude.ai users can just give `https://brainstem.cc/mcp`.
+
+**Fix:** On authenticated `/mcp` POST, look up the session's user_id, query installations, and auto-scope to the user's installation. Falls through to generic about-only MCP if unauthenticated. `/mcp/{uuid}` continues working for backward compatibility.
+
 ### Self-service onboarding UI
 
 The setup page is minimal. Could add progress indicators, repo selection (for multi-repo), and connection verification.
@@ -90,7 +96,7 @@ The setup page is minimal. Could add progress indicators, repo selection (for mu
 
 ## Done
 
-Items completed in v4.0-v4.2, for changelog reference:
+Items completed in v4.0-v4.3, for changelog reference:
 
 - **Security lockdown (ADR-002):** Auth on all endpoints, legacy `/mcp` removed, workers.dev disabled, debug endpoints auth-gated with ownership checks, `/doc/*` removed, dual-write eliminated, root R2 cleaned
 - **AI Search tenant isolation:** Folder metadata filtering (`gt`/`lte`) on shared index
@@ -104,6 +110,9 @@ Items completed in v4.0-v4.2, for changelog reference:
 - **OAuth success page UX:** Shows real installation UUID in MCP config (no more placeholder)
 - **Token expiry extended:** Session tokens changed from 30 days to 1 year
 - **Webhook pipeline fix:** Corrected webhook URL from `/setup/callback` to `/webhook/github`
+- **Success page redesign:** Copy-button fields matching Claude.ai connector labels; note that OAuth Client ID/Secret not needed
+- **Generic MCP at bare `/mcp`:** About-only tool with connection instructions when no installation scoped
+- **Bare `/mcp` GET blocked:** Returns 404 JSON with setup instructions
 
 ---
 
