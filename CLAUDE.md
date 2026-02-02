@@ -442,7 +442,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 ## Current Status
 
-**v4.3 — Connection UX + Generic MCP:**
+**v4.4 — Tarball Sync + Security Transparency:**
 - ✅ All MCP endpoints require OAuth bearer token
 - ✅ Legacy `/mcp` endpoint removed
 - ✅ workers.dev domain disabled (`workers_dev = false`)
@@ -466,6 +466,9 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 - ✅ OAuth success page redesigned with copy-button fields matching Claude.ai labels
 - ✅ Bare `/mcp` GET returns 404 with setup instructions
 - ✅ Bare `/mcp` POST serves generic about-only MCP (no brain content accessible)
+- ✅ Tarball-based initial sync (1 subrequest for entire repo, replaces per-file Blobs API)
+- ✅ Security & privacy disclosures on homepage, README, and content.md
+- ✅ ADR-003: encryption at rest analyzed (7 alternatives), decided on transparency + future per-user isolation
 
 ## Known Limitations
 
@@ -476,6 +479,8 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 3. **No token refresh** — Sessions expire after 1 year with no refresh mechanism.
 
 4. **Initial sync size limit** — Full repo sync downloads the entire repo as a tarball into memory. Very large repos may exceed Worker memory limits (128MB).
+
+5. **No application-layer encryption** — User files in R2 are encrypted with Cloudflare-managed keys (AES-256-GCM) but are readable by the platform operator. This was analyzed thoroughly in ADR-003 and is an intentional tradeoff: application-layer encryption is incompatible with AI Search. See `docs/adr/003-encryption-at-rest.md`.
 
 ## Backlog
 
