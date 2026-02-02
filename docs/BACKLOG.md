@@ -6,7 +6,7 @@
 
 ## Critical — Blocking core functionality
 
-### File deletion sync
+### File deletion sync ⚙️ IN PROGRESS
 
 When files are deleted from the GitHub repo, they are **not** deleted from R2 or AI Search. The webhook handler (`extractChangedFiles`) collects `removed` files from push payloads but ignores them — see `src/index.ts` line 1392: `// Note: We don't handle removed files yet`.
 
@@ -15,6 +15,10 @@ When files are deleted from the GitHub repo, they are **not** deleted from R2 or
 ---
 
 ## High — Security & correctness
+
+### ~~User data encryption at rest~~ → [ADR-003](adr/003-encryption-at-rest.md)
+
+Decided: R2 already encrypts at rest (Cloudflare-managed AES-256-GCM). Application-layer encryption is incompatible with AI Search (which reads R2 directly) and any scheme where the Worker holds keys doesn't protect against the operator. Phase 1: document trust model and add disclosures (done). Phase 2: per-user R2 + AI Search instances for hard tenant isolation. Phase 3 (aspirational): BYOA model for true operator-blindness.
 
 ### Verify AI Search tenant isolation
 
@@ -52,11 +56,9 @@ GitHub Apps can be installed on multiple repos, but only the first repo is synce
 
 Configure `include_items: ["brains/**"]` in the AI Search instance settings to ensure only scoped files are indexed (not stale root objects).
 
-### Brain summary generation on sync
+### ~~Brain summary generation on sync~~ ✅ DONE
 
-The `_brain_summary.json` file is generated during `syncRepo` (initial sync) but NOT regenerated during incremental webhook syncs. Adding/removing files via push doesn't update the summary's `domains`, `topics`, or `recentFiles`.
-
-**Fix:** Call `generateBrainSummary` at the end of `syncChangedFiles` (incremental webhook handler) in addition to `syncRepo`.
+Fixed: `syncChangedFiles` now regenerates `_brain_summary.json` after any file changes (added, modified, or removed), not just removals.
 
 ---
 
@@ -80,7 +82,7 @@ Error responses mix plain text and JSON. Standardize on `{ "error": "code", "mes
 
 ### Automated tests
 
-No automated tests exist. Manual test scripts (`test-mcp.mjs`, `test-user-mcp.mjs`) require a live deployment. Would benefit from unit tests for OAuth, integration tests for webhooks, and E2E tests for MCP tools.
+No automated tests exist. The manual test script (`test-user-mcp.mjs`) requires a live deployment and valid bearer token. Would benefit from unit tests for OAuth, integration tests for webhooks, and E2E tests for MCP tools.
 
 ### UUID-free MCP URL
 
@@ -96,6 +98,10 @@ The setup page is minimal. Could add progress indicators, repo selection (for mu
 
 ## Done
 
+Items completed in v4.4+:
+
+- **Initial sync subrequest limit fix:** `syncRepo` previously fetched each file individually via the Git Blobs API (1 external subrequest per file), hitting the Workers free-plan 50-subrequest limit. Repos with >50 files silently stopped syncing partway through (e.g., 51/136 files). Replaced with GitHub Tarball API approach — downloads the entire repo as a gzip tarball in 1 subrequest, extracts and filters in-memory, then writes to R2 (internal bindings, no limit).
+
 Items completed in v4.0-v4.3, for changelog reference:
 
 - **Security lockdown (ADR-002):** Auth on all endpoints, legacy `/mcp` removed, workers.dev disabled, debug endpoints auth-gated with ownership checks, `/doc/*` removed, dual-write eliminated, root R2 cleaned
@@ -104,7 +110,7 @@ Items completed in v4.0-v4.3, for changelog reference:
 - **Dynamic Client Registration (RFC 7591):** `/oauth/register`
 - **PKCE support:** S256 code challenge/verifier in OAuth flow
 - **Claude.ai connector:** Automatic OAuth discovery, DCR, PKCE — connect with just the MCP URL
-- **Inbox tool:** Always registered (removed conditional on inbox folder existence)
+- **brain_inbox tool:** Always registered (removed conditional on inbox folder existence); renamed from `inbox` to `brain_inbox` for clarity
 - **Initial sync on setup:** Background `waitUntil` sync in `/setup/callback` — repo content available within minutes of installation
 - **Account deletion:** `installation.deleted` webhook purges R2 files, D1 records, sessions. Manual `/debug/delete/{uuid}` endpoint also available
 - **OAuth success page UX:** Shows real installation UUID in MCP config (no more placeholder)
@@ -120,4 +126,5 @@ Items completed in v4.0-v4.3, for changelog reference:
 
 - [ADR-001: GitHub App](adr/001-github-app.md)
 - [ADR-002: Security Isolation](adr/002-security-isolation.md)
+- [ADR-003: Encryption at Rest](adr/003-encryption-at-rest.md)
 - [CLAUDE.md](../CLAUDE.md)

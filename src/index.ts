@@ -6,8 +6,7 @@ import {
   getInstallationRepos,
   fetchRepoContents,
   fetchFileContent,
-  fetchRepoTree,
-  fetchBlobContent,
+  fetchRepoTarballFiles,
   createRepoFile,
   verifyWebhookSignature,
   type GitHubEnv,
@@ -512,12 +511,11 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
   }
 
   /**
-   * inbox - Accept notes and add them as .md files to the inbox folder
-   * Only registered if an inbox/ folder exists in R2
+   * brain_inbox - Accept notes and add them as .md files to the inbox folder
    */
   private async registerInbox() {
     this.server.tool(
-      "inbox",
+      "brain_inbox",
       "Add a note to the brain's inbox. Creates a new .md file in the inbox/ folder of the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder for later.",
       {
         title: z
@@ -572,7 +570,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
                     repo,
                     filePath,
                     content,
-                    `Add inbox note: ${title}`
+                    `Add brain inbox note: ${title}`
                   );
                 }
               }
@@ -584,7 +582,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
                 content: [
                   {
                     type: "text" as const,
-                    text: `Note saved to inbox (R2 only): ${filePath}\nGitHub write failed: ${ghMsg}`,
+                    text: `Note saved to brain inbox (R2 only): ${filePath}\nGitHub write failed: ${ghMsg}`,
                   },
                 ],
               };
@@ -595,7 +593,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
             content: [
               {
                 type: "text" as const,
-                text: `Note saved to inbox: ${filePath}`,
+                text: `Note saved to brain inbox: ${filePath}`,
               },
             ],
           };
@@ -908,7 +906,7 @@ function handleHomepage(env: Env): Response {
   const appName = env.GITHUB_APP_NAME || "git-brain-stem";
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Brain Stem - Give your AI a second brain</title>
@@ -922,25 +920,32 @@ function handleHomepage(env: Env): Response {
       <p class="tagline" style="margin-bottom: 0;">Connect your GitHub-based PKM to any MCP-compatible AI client.</p>
     </div>
 
-    <p>Brainstem connects your personal knowledge base on GitHub to AI chat clients like Claude Mobile, giving your AI fast, simple access to your notes and context. Currently supports <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.yaml</code>, and <code>.yml</code> files.</p>
+    <p>Brainstem connects your personal knowledge base on GitHub to AI chat clients like Claude Mobile, giving your AI fast, simple access to your notes and context. Currently supports <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.yaml</code>, <code>.yml</code>, <code>.toml</code>, <code>.rst</code>, and <code>.adoc</code> files.</p>
 
     <img src="/diagram.png" alt="How Brainstem works" style="width: 100%; height: auto; margin: 1.5rem 0; border-radius: 8px;">
 
     <h2>How it works</h2>
 
     <div class="step">
-      <p><span class="step-number">1.</span> <span class="step-title">You have a GitHub-hosted PKM</span></p>
-      <p class="muted">A "second brain" repo — private or public. Maybe you maintain it with Claude Code, Codex, or another agent. Maybe it's an Obsidian vault backed by git. Maybe it's just markdown files.</p>
+      <p><span class="step-number">1.</span> <span class="step-title">You maintain a "second brain"</span></p>
+      <p class="muted">Notes, docs, or a knowledge base in a private GitHub repo. Maybe you use Obsidian, Claude Code, or just markdown files.</p>
     </div>
 
     <div class="step">
-      <p><span class="step-number">2.</span> <span class="step-title">Install the Brainstem GitHub App</span></p>
-      <p class="muted">Connect your repo. Brainstem embeds your content and keeps itself up-to-date with every push.</p>
+      <p><span class="step-number">2.</span> <span class="step-title">Connect it to Brain Stem</span></p>
+      <p class="muted">Install our GitHub App on your repo. We sync your files and index them for semantic search.</p>
     </div>
 
     <div class="step">
-      <p><span class="step-number">3.</span> <span class="step-title">Search and retrieve from any AI chat client</span></p>
-      <p class="muted">Brainstem exposes your repo via MCP tools. Connect it to Claude Mobile, Claude Desktop, or any compatible client.</p>
+      <p><span class="step-number">3.</span> <span class="step-title">Your MCP-compatible AI client can access it</span></p>
+      <p class="muted">Claude Desktop, Claude Code, Claude.ai, or other MCP-compatible clients can search and retrieve from your brain.</p>
+    </div>
+
+    <p class="muted" style="text-align: center; margin-top: 1.5rem;">That's it. No complex setup. No manual file uploads. Push to GitHub, and your AI knows about it within a minute.</p>
+
+    <div style="margin-top: 1.5rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px; background: #fafafa;">
+      <p style="margin: 0 0 0.5rem 0; font-weight: 600; font-size: 0.9rem;">Security &amp; Privacy</p>
+      <p class="muted" style="margin: 0; font-size: 0.85rem;">Your files are stored on Cloudflare R2 (encrypted at rest) and indexed by Cloudflare AI Search. The platform operator has technical access to stored content for operational purposes. Do not connect repositories containing secrets, credentials, or highly sensitive data. You can disconnect and delete your data at any time by uninstalling the GitHub App.</p>
     </div>
 
     <hr>
@@ -982,7 +987,7 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
   if (setupAction === "cancel") {
     return new Response(`<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Installation Cancelled - Brain Stem</title>
@@ -1026,7 +1031,7 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
     if (repos.length === 0) {
       return new Response(`<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>No Repositories - Brain Stem</title>
@@ -1083,7 +1088,7 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
     console.error("Setup callback error:", error);
     return new Response(`<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Setup Error - Brain Stem</title>
@@ -1106,7 +1111,7 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
 function renderSuccessPage(mcpUrl: string, repoName: string): Response {
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Connected! - Brain Stem</title>
@@ -1115,7 +1120,7 @@ function renderSuccessPage(mcpUrl: string, repoName: string): Response {
 <body>
   <div class="container">
     <h1 class="success">Connected!</h1>
-    <p>Your repository <strong>${escapeHtml(repoName)}</strong> is now synced and searchable.</p>
+    <p>Your repository <strong>${escapeHtml(repoName)}</strong> is now connected. Content will be synced and searchable after your next push.</p>
 
     <hr>
 
@@ -1148,6 +1153,11 @@ function renderSuccessPage(mcpUrl: string, repoName: string): Response {
 
     <h2>Your endpoint</h2>
     <div class="highlight">${escapeHtml(mcpUrl)}</div>
+
+    <hr>
+
+    <h2>Already installed?</h2>
+    <p>Need a new token? You can <a href="/oauth/authorize">re-authorize with GitHub</a> at any time to get a fresh bearer token.</p>
 
     <div class="footer">
       <p>Questions? Check the <a href="https://github.com/dudgeon/git-brain/blob/main/TROUBLESHOOTING.md">troubleshooting guide</a>.</p>
@@ -1283,14 +1293,17 @@ async function handleGitHubWebhook(request: Request, env: Env): Promise<Response
       const token = await getInstallationToken(env, parseInt(githubInstallationId));
       const [owner, repo] = installation.repo_full_name.split("/");
 
-      // Extract changed files from push payload (incremental sync)
-      const changedFiles = extractChangedFiles(payload);
+      // Extract changed and removed files from push payload (incremental sync)
+      const { changed, removed } = extractChangedFiles(payload);
 
-      if (changedFiles.length > 0) {
-        await syncChangedFiles(env, installation.id, owner, repo, token, changedFiles);
-        const summary = `Synced ${changedFiles.length} files: ${changedFiles.slice(0, 3).join(", ")}${changedFiles.length > 3 ? "..." : ""}`;
+      if (changed.length > 0 || removed.length > 0) {
+        await syncChangedFiles(env, installation.id, owner, repo, token, changed, removed);
+        const parts: string[] = [];
+        if (changed.length > 0) parts.push(`synced ${changed.length} files: ${changed.slice(0, 3).join(", ")}${changed.length > 3 ? "..." : ""}`);
+        if (removed.length > 0) parts.push(`deleted ${removed.length} files: ${removed.slice(0, 3).join(", ")}${removed.length > 3 ? "..." : ""}`);
+        const summary = parts.join("; ");
         await logWebhook(env, event, installation.id, summary, "success");
-        console.log(`Incremental sync: ${changedFiles.length} files for ${installation.repo_full_name}`);
+        console.log(`Incremental sync for ${installation.repo_full_name}: ${summary}`);
       } else {
         await logWebhook(env, event, installation.id, "push with no syncable files", "success");
         console.log(`No syncable files changed in push to ${installation.repo_full_name}`);
@@ -1420,8 +1433,9 @@ async function handleUserMcp(
 /**
  * Extract changed files from a GitHub push webhook payload
  */
-function extractChangedFiles(payload: { commits?: Array<{ added?: string[]; modified?: string[]; removed?: string[] }> }): string[] {
+function extractChangedFiles(payload: { commits?: Array<{ added?: string[]; modified?: string[]; removed?: string[] }> }): { changed: string[]; removed: string[] } {
   const changedFiles = new Set<string>();
+  const removedFiles = new Set<string>();
   const textExtensions = ["md", "txt", "json", "yaml", "yml", "toml", "rst", "adoc"];
   const sensitiveFiles = [".env", ".env.local", ".env.production", ".mcp.json", "credentials.json", "secrets.json", ".npmrc", ".pypirc"];
 
@@ -1431,21 +1445,36 @@ function extractChangedFiles(payload: { commits?: Array<{ added?: string[]; modi
       const ext = file.split(".").pop()?.toLowerCase();
       const fileName = file.split("/").pop()?.toLowerCase() || "";
 
-      // Skip sensitive files
       if (sensitiveFiles.includes(fileName) || fileName.startsWith(".env.")) {
         continue;
       }
 
-      // Only include text files
       if (textExtensions.includes(ext || "")) {
         changedFiles.add(file);
       }
     }
 
-    // Note: We don't handle removed files yet (would need to delete from R2)
+    // Collect removed files (same filtering as added/modified)
+    for (const file of commit.removed || []) {
+      const ext = file.split(".").pop()?.toLowerCase();
+      const fileName = file.split("/").pop()?.toLowerCase() || "";
+
+      if (sensitiveFiles.includes(fileName) || fileName.startsWith(".env.")) {
+        continue;
+      }
+
+      if (textExtensions.includes(ext || "")) {
+        removedFiles.add(file);
+      }
+    }
   }
 
-  return Array.from(changedFiles);
+  // If a file was removed in one commit but re-added in another, don't delete it
+  for (const file of changedFiles) {
+    removedFiles.delete(file);
+  }
+
+  return { changed: Array.from(changedFiles), removed: Array.from(removedFiles) };
 }
 
 /**
@@ -1457,7 +1486,8 @@ async function syncChangedFiles(
   owner: string,
   repo: string,
   token: string,
-  changedFiles: string[]
+  changedFiles: string[],
+  removedFiles: string[] = []
 ): Promise<void> {
   const prefix = `brains/${installationUuid}/`;
 
@@ -1478,10 +1508,37 @@ async function syncChangedFiles(
     }
   }
 
+  // Delete removed files from R2
+  for (const filePath of removedFiles) {
+    await env.R2.delete(`${prefix}${filePath}`);
+    console.log(`Deleted: ${filePath}`);
+  }
+
   // Update last_sync_at
   await env.DB.prepare(
     "UPDATE installations SET last_sync_at = ? WHERE id = ?"
   ).bind(new Date().toISOString(), installationUuid).run();
+
+  // Regenerate brain summary after any file changes (keeps metadata in sync)
+  if (changedFiles.length > 0 || removedFiles.length > 0) {
+    try {
+      const allFiles: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const listed = await env.R2.list({ prefix, cursor });
+        for (const obj of listed.objects) {
+          const relative = obj.key.slice(prefix.length);
+          if (relative && relative !== "_brain_summary.json") {
+            allFiles.push(relative);
+          }
+        }
+        cursor = listed.truncated ? listed.cursor : undefined;
+      } while (cursor);
+      await generateBrainSummary(env, prefix, allFiles);
+    } catch (e) {
+      console.error("Failed to regenerate brain summary:", e);
+    }
+  }
 
   // Trigger AI Search re-indexing (non-blocking, best-effort)
   // The cooldown is 3 minutes, so rapid syncs may skip reindex
@@ -1528,9 +1585,8 @@ async function deleteInstallation(env: Env, installationUuid: string): Promise<{
 
 /**
  * Sync a repository from GitHub to R2 (FULL sync)
- * Uses the Git Trees API to fetch the entire file tree in one call,
- * then downloads each file individually via the Blobs API.
- * This uses O(1 + files) subrequests instead of O(dirs + files).
+ * Downloads the entire repo as a tarball (1 subrequest) and extracts files.
+ * This avoids the Workers 50-subrequest limit that previously caused partial syncs.
  */
 async function syncRepo(
   env: Env,
@@ -1544,37 +1600,23 @@ async function syncRepo(
   const sensitiveFiles = [".env", ".env.local", ".env.production", ".mcp.json", "credentials.json", "secrets.json", ".npmrc", ".pypirc"];
   const skipDirs = ["node_modules", ".git", ".github", "dist", "build", "__pycache__"];
 
-  // Fetch entire file tree in a single API call
-  const tree = await fetchRepoTree(token, owner, repo);
-
-  // Filter to syncable files
-  const filesToSync = tree.filter(item => {
-    if (item.type !== "blob") return false;
-
-    // Skip files in excluded directories
-    const parts = item.path.split("/");
-    if (parts.some(p => skipDirs.includes(p))) return false;
-
-    // Skip sensitive files
-    const fileName = parts[parts.length - 1].toLowerCase();
-    if (sensitiveFiles.includes(fileName) || fileName.startsWith(".env.")) return false;
-
-    // Only sync text-based files
-    const ext = item.path.split(".").pop()?.toLowerCase();
-    return textExtensions.includes(ext || "");
+  // Download entire repo as tarball and extract matching files (1 external subrequest)
+  const files = await fetchRepoTarballFiles(token, owner, repo, {
+    textExtensions,
+    sensitiveFiles,
+    skipDirs,
   });
 
-  console.log(`Tree API returned ${tree.length} items, ${filesToSync.length} syncable files`);
+  console.log(`Tarball extracted ${files.length} syncable files`);
 
-  // Download and store each file
+  // Store each file in R2 (internal binding — no subrequest limit)
   const syncedFiles: string[] = [];
-  for (const file of filesToSync) {
+  for (const file of files) {
     try {
-      const content = await fetchBlobContent(token, file.url);
-      await env.R2.put(`${prefix}${file.path}`, content);
+      await env.R2.put(`${prefix}${file.path}`, file.content);
       syncedFiles.push(file.path);
     } catch (error) {
-      console.error(`Failed to sync ${file.path}:`, error);
+      console.error(`Failed to store ${file.path}:`, error);
     }
   }
 
@@ -2000,7 +2042,22 @@ async function handleOAuthCallback(request: Request, env: Env): Promise<Response
   const error = url.searchParams.get("error");
 
   if (error) {
-    return new Response(`OAuth error: ${error}`, { status: 400 });
+    return new Response(`<!DOCTYPE html>
+<html lang="en">
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authorization Cancelled - Brain Stem</title>
+  <style>${SITE_STYLES}</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Authorization Cancelled</h1>
+    <p>You cancelled the GitHub authorization. You'll need to authorize to get a bearer token for your AI client.</p>
+    <a href="/oauth/authorize" class="btn btn-primary">Try Again</a>
+  </div>
+</body>
+</html>`, { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 400 });
   }
 
   if (!code || !state) {
@@ -2130,7 +2187,7 @@ function renderOAuthSuccessPage(
 
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Authenticated! - Brainstem</title>
@@ -2156,7 +2213,7 @@ function renderOAuthSuccessPage(
     ${mcpUrl ? `
     <hr>
     <h2>Connect to Claude.ai</h2>
-    <p>In Claude.ai: Settings &rarr; Connectors &rarr; Add custom connector</p>
+    <p>In <a href="https://claude.ai/settings/connectors" target="_blank">Claude.ai Settings &rarr; Connectors</a> &rarr; Add custom connector</p>
 
     <div class="field-label">Remote server MCP url</div>
     <div class="copy-field">
@@ -2166,7 +2223,7 @@ function renderOAuthSuccessPage(
     <div class="info-box">OAuth Client ID and Client Secret are not needed &mdash; Claude.ai handles authentication automatically.</div>
     ` : `
     <hr>
-    <div class="warning-box"><strong>No installation found.</strong> <a href="/setup">Connect a repository</a> first, then return here to get your MCP URL.</div>
+    <div class="warning-box"><strong>No installation found.</strong> <a href="/">Connect a repository</a> first, then return here to get your MCP URL.</div>
     `}
 
     <hr>
