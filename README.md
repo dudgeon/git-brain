@@ -34,38 +34,33 @@ That's it. Push to GitHub, and your AI can search it within a minute.
 3. Select your repository
 4. Copy your unique MCP endpoint URL from the success page
 
-### 2. Authenticate
+### 2. Connect Your AI Client
 
-1. Visit [brainstem.cc/oauth/authorize](https://brainstem.cc/oauth/authorize)
-2. Authorize with GitHub
-3. Copy your session token
+#### Claude.ai (Web) — easiest
 
-### 3. Connect Your AI Client
+1. Go to **Settings → Connectors → Add custom connector**
+2. Paste your MCP endpoint URL: `https://brainstem.cc/mcp/{your-uuid}`
+3. Claude.ai handles authentication automatically via OAuth — no token needed
 
 #### Claude Desktop / Claude Code
 
-Add to your MCP config:
+Add to your MCP config (Claude Desktop: `claude_desktop_config.json`, Claude Code: `.mcp.json` or via `claude mcp add`):
 
 ```json
 {
   "mcpServers": {
     "my-brain": {
-      "url": "https://brainstem.cc/mcp/{your-uuid}",
-      "headers": {
-        "Authorization": "Bearer <your-session-token>"
-      }
+      "url": "https://brainstem.cc/mcp/{your-uuid}"
     }
   }
 }
 ```
 
-#### Claude.ai (Web)
-
-Settings → Connectors → Add custom connector → paste your endpoint URL and add the Authorization header.
+OAuth authentication is handled automatically — you'll be prompted to authorize with GitHub on first use. No manual token needed.
 
 ## MCP Tools
 
-Brainstem exposes six tools over MCP:
+Brainstem exposes five tools over MCP:
 
 | Tool | Description |
 |------|-------------|
@@ -73,8 +68,7 @@ Brainstem exposes six tools over MCP:
 | `get_document` | Retrieve the full contents of a file by its path. |
 | `list_recent` | List recently modified files, optionally filtered by path prefix. |
 | `list_folders` | Browse the folder structure of your repo. |
-| `inbox` | Add a quick note to your inbox folder, committed directly to GitHub. |
-| `about` | Information about the Brainstem server and what it does. |
+| `brain_inbox` | Add a quick note to your inbox folder, committed directly to GitHub. |
 
 ## How Sync Works
 
