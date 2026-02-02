@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connected! - Brain Stem</title>
+  <style>
+{{STYLES}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="success">Connected!</h1>
+    <p>Your repository <strong>{{REPO_NAME}}</strong> is now synced and searchable.</p>
+
+    <hr>
+
+    <h2>Step 1: Get your auth token</h2>
+    <p>Brain Stem uses GitHub to verify you own your repos. Click below to authenticate and get your bearer token.</p>
+    <a href="/oauth/authorize" class="btn btn-success">Authorize with GitHub</a>
+
+    <hr>
+
+    <h2>Step 2: Configure your AI client</h2>
+
+    <h3>Claude Desktop / Claude Code</h3>
+    <p>Add to your MCP config (on macOS: <code>~/.config/claude/mcp_servers.json</code>):</p>
+    <pre><code>{
+  "mcpServers": {
+    "my-brain": {
+      "url": "{{MCP_URL}}",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}</code></pre>
+    <p class="muted">Replace <code>YOUR_TOKEN_HERE</code> with your bearer token from step 1.</p>
+
+    <h3>Claude.ai (Web)</h3>
+    <p>Settings → Connectors → Add custom connector → paste your endpoint URL and add the Authorization header.</p>
+
+    <hr>
+
+    <h2>Your endpoint</h2>
+    <div class="highlight">{{MCP_URL}}</div>
+
+    <div class="footer">
+      <p>Questions? Check the <a href="https://github.com/dudgeon/git-brain/blob/main/TROUBLESHOOTING.md">troubleshooting guide</a>.</p>
+    </div>
+  </div>
+</body>
+</html>

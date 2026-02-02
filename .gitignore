@@ -16,6 +16,12 @@ dist/
 *.log
 npm-debug.log*
 
+# Local brain data (R2 paths, not needed locally)
+brains/
+
+# Pixelmator source files
+*.pxm
+
 # OS files
 .DS_Store
 Thumbs.db
