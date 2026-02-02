@@ -472,15 +472,13 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 ## Known Limitations
 
-1. **Deleted files not cleaned up** — Files deleted from the GitHub repo are never removed from R2 or AI Search. The webhook handler collects `removed` files but ignores them.
+1. **AI Search tenant isolation unverified** — Folder metadata filtering is implemented but never tested with multiple tenants. Cross-tenant leakage is theoretically possible.
 
-2. **AI Search tenant isolation unverified** — Folder metadata filtering is implemented but never tested with multiple tenants. Cross-tenant leakage is theoretically possible.
+2. **No token refresh** — Sessions expire after 1 year with no refresh mechanism.
 
-3. **No token refresh** — Sessions expire after 1 year with no refresh mechanism.
+3. **Initial sync size limit** — Full repo sync downloads the entire repo as a tarball into memory. Very large repos may exceed Worker memory limits (128MB).
 
-4. **Initial sync size limit** — Full repo sync downloads the entire repo as a tarball into memory. Very large repos may exceed Worker memory limits (128MB).
-
-5. **No application-layer encryption** — User files in R2 are encrypted with Cloudflare-managed keys (AES-256-GCM) but are readable by the platform operator. This was analyzed thoroughly in ADR-003 and is an intentional tradeoff: application-layer encryption is incompatible with AI Search. See `docs/adr/003-encryption-at-rest.md`.
+4. **No application-layer encryption** — User files in R2 are encrypted with Cloudflare-managed keys (AES-256-GCM) but are readable by the platform operator. This was analyzed thoroughly in ADR-003 and is an intentional tradeoff: application-layer encryption is incompatible with AI Search. See `docs/adr/003-encryption-at-rest.md`.
 
 ## Backlog
 

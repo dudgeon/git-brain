@@ -6,11 +6,7 @@
 
 ## Critical — Blocking core functionality
 
-### File deletion sync ⚙️ IN PROGRESS
-
-When files are deleted from the GitHub repo, they are **not** deleted from R2 or AI Search. The webhook handler (`extractChangedFiles`) collects `removed` files from push payloads but ignores them — see `src/index.ts` line 1392: `// Note: We don't handle removed files yet`.
-
-**Fix:** In `syncChangedFiles`, delete R2 objects for removed files (`env.R2.delete(key)`). Trigger AI Search reindex after deletion to remove stale vectors.
+*(No critical items)*
 
 ---
 
@@ -100,6 +96,7 @@ The setup page is minimal. Could add progress indicators, repo selection (for mu
 
 Items completed in v4.4+:
 
+- **File deletion sync:** `extractChangedFiles` now returns both changed and removed files. `syncChangedFiles` deletes removed files from R2 and triggers AI Search reindex. Brain summary is regenerated after deletions. Also handles file moves (git treats moves as remove + add). AI Search takes 2-3 minutes to process deletion from its vector index — this is expected Cloudflare behavior, not a bug.
 - **Initial sync subrequest limit fix:** `syncRepo` previously fetched each file individually via the Git Blobs API (1 external subrequest per file), hitting the Workers free-plan 50-subrequest limit. Repos with >50 files silently stopped syncing partway through (e.g., 51/136 files). Replaced with GitHub Tarball API approach — downloads the entire repo as a gzip tarball in 1 subrequest, extracts and filters in-memory, then writes to R2 (internal bindings, no limit).
 
 Items completed in v4.0-v4.3, for changelog reference:
