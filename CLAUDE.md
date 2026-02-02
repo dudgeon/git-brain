@@ -17,6 +17,18 @@ Git Brain is a remote MCP (Model Context Protocol) server that exposes private G
 
 Instead, clearly state what you're blocked on and what you need from the user.
 
+**Keep `site/content.md` in sync:** When making major changes to any user-facing HTML page (homepage, success page, OAuth pages, error pages), always update `site/content.md` to reflect the change. This file is the source of truth for all page content on brainstem.cc. If the HTML and content.md diverge, content.md wins.
+
+**Fix the code, don't work around it:** When you discover a bug or limitation in the application, your default response must be to fix the application code — not trigger manual workarounds (debug endpoints, manual syncs, etc.). Workarounds are not acceptable as solutions. If you identify a defect, immediately shift to implementing a code fix. This does NOT mean repurposing existing destructive endpoints for unintended purposes — if no safe endpoint exists for what you need, write a one-off script instead.
+
+**Document bugs proactively:** When you discover a bug, immediately log it in `docs/BACKLOG.md` — don't wait to be asked. If you're about to fix it, log it as a Done item with explanation. If it's deferred, add it to the appropriate priority section.
+
+**Keep test credentials current:** When installation UUIDs or bearer tokens change (e.g., after a reinstall), immediately update `test-user-mcp.mjs` and any other test scripts. Being able to test the MCP server directly is critical — never leave stale credentials as a known issue.
+
+**Verify before asking the user to validate:** Always test functionality yourself before reporting it as done or asking the user to check. This means: hit the prod MCP server directly (`node test-user-mcp.mjs`, `curl` against live endpoints), check debug/status endpoints to confirm state changes, and use Chrome integration (`--chrome` flag or `/chrome` command) to visually inspect web page changes (success pages, setup pages, etc.). The user's validation should be a second look, not the primary check. When testing features end-to-end (e.g., webhook-triggered sync, file deletion), run the verification scripts yourself — don't ask the user to run them or report back results.
+
+**Never run destructive operations against production data:** Debug endpoints like `/debug/delete` and `/debug/sync` have irreversible side effects (purging R2 files, deleting D1 records, revoking sessions). Before calling any write/POST debug endpoint, re-read the endpoint's documentation in this file to understand exactly what it does. If you need to clean up R2 without destroying the installation, write a targeted script — don't repurpose a full-deletion endpoint. When in doubt, ask the user before executing.
+
 **Be proactive with read-only research:** When investigating issues or verifying changes, always proactively check the live state of things (R2 contents, GitHub repo, worker logs, debug endpoints) rather than waiting for the user to ask. Read-only operations are safe and give you the information needed to diagnose problems or confirm success.
 
 **Use your own tooling — don't delegate diagnostics to the user:** You have the GitHub App private key (`github-app.pem`, App ID `2716073`) and can authenticate as the GitHub App to query webhook deliveries, installation details, and other App-level APIs. Use manual JWT generation (Node.js `crypto` module) rather than `@octokit/auth-app` for CLI scripts — it's more reliable. When something isn't working, pull the logs yourself rather than asking the user to check GitHub UI.
@@ -73,9 +85,7 @@ git-brain/
 ├── wrangler.toml          # Cloudflare Worker configuration
 ├── package.json
 ├── tsconfig.json
-├── test-mcp.mjs           # MCP connection test script
-├── test-tools.mjs         # Full tools test script
-├── test-user-mcp.mjs      # Per-user MCP endpoint test
+├── test-user-mcp.mjs      # MCP endpoint test (authenticated, production)
 ├── docs/
 │   ├── BACKLOG.md             # Product backlog (prioritized)
 │   └── adr/
@@ -160,7 +170,7 @@ All MCP connections require a bearer token from OAuth. The legacy `/mcp` endpoin
 | `get_document` | Retrieve document from R2 by path | `path` |
 | `list_recent` | List recently modified files | `limit?`, `path_prefix?` |
 | `list_folders` | Browse folder structure | `path?` |
-| `inbox` | Add a note to the inbox | `title`, `content` |
+| `brain_inbox` | Add a note to the inbox | `title`, `content` |
 
 ## AI Search Reindex API
 
@@ -192,9 +202,6 @@ npm run typecheck
 npm run deploy
 
 # Test MCP connection (REQUIRED after changes)
-node test-mcp.mjs
-
-# Test per-user MCP endpoint
 node test-user-mcp.mjs
 ```
 
@@ -223,7 +230,7 @@ Connected!
     { "name": "get_document", ... },
     { "name": "list_recent", ... },
     { "name": "list_folders", ... },
-    { "name": "inbox", ... }
+    { "name": "brain_inbox", ... }
   ]
 }
 ```
@@ -380,7 +387,7 @@ Both call `deleteInstallation(env, installationUuid)` which:
 
 5. **nodejs_compat flag**: The agents SDK requires Node.js compatibility mode in wrangler.toml.
 
-6. **Worker subrequest limits**: Recursive `syncDirectory` made 1 subrequest per directory + 1 per file, hitting the 1000 limit at ~40 files. Solution: rewrote `syncRepo` to use Git Trees API (1 call for entire tree) + Blobs API (1 call per file), reducing subrequests to O(1 + files).
+6. **Worker subrequest limits (v1)**: Recursive `syncDirectory` made 1 subrequest per directory + 1 per file. Solution: rewrote to use Git Trees API + Blobs API, reducing to O(1 + files). **(v2)**: Blobs API still used 1 subrequest per file, hitting the free-plan 50-subrequest limit at ~50 files (repos with 136 files only synced 51). Solution: replaced with GitHub Tarball API — downloads entire repo as gzip tarball in 1 subrequest, parses tar in-memory, writes to R2 via internal bindings.
 
 7. **Webhook URL misconfigured**: GitHub App webhook URL was set to `/setup/callback` (a GET endpoint) instead of `/webhook/github`. All webhook POST requests returned 400 for days. Diagnosed by querying `GET /app/hook/deliveries` using the local GitHub App private key. Fix: updated webhook URL in GitHub App settings.
 
@@ -448,7 +455,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 - ✅ Dynamic Client Registration (`/oauth/register`)
 - ✅ PKCE support (S256)
 - ✅ Claude.ai automatic connector integration
-- ✅ 6 MCP tools: about, search_brain, get_document, list_recent, list_folders, inbox
+- ✅ 6 MCP tools: about, search_brain, get_document, list_recent, list_folders, brain_inbox
 - ✅ Initial sync on setup (background via `waitUntil`)
 - ✅ Account deletion: R2 purge, D1 cleanup, session revocation on GitHub App uninstall
 - ✅ Manual deletion via `/debug/delete/{uuid}`
@@ -468,7 +475,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 3. **No token refresh** — Sessions expire after 1 year with no refresh mechanism.
 
-4. **Initial sync subrequest limit** — Full repo sync may hit the Worker 1000-subrequest limit on repos with >500 files. Works for typical knowledge base repos.
+4. **Initial sync size limit** — Full repo sync downloads the entire repo as a tarball into memory. Very large repos may exceed Worker memory limits (128MB).
 
 ## Backlog
 

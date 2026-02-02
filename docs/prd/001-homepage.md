@@ -336,7 +336,7 @@ open https://brainstem.cc/oauth/authorize
 curl -H "Authorization: Bearer <token>" https://brainstem.cc/mcp/<uuid>
 
 # Run full MCP test
-node test-mcp.mjs
+node test-user-mcp.mjs
 ```
 
 ---

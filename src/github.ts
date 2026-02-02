@@ -268,6 +268,99 @@ export async function fetchBlobContent(
 }
 
 /**
+ * Fetch the entire repo as a gzip tarball (single API call)
+ * and extract text files, returning an array of {path, content} entries.
+ * This uses only 1 external subrequest regardless of repo size.
+ */
+export async function fetchRepoTarballFiles(
+  token: string,
+  owner: string,
+  repo: string,
+  opts: {
+    textExtensions: string[];
+    sensitiveFiles: string[];
+    skipDirs: string[];
+  }
+): Promise<Array<{ path: string; content: string }>> {
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/tarball`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "brain-stem",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`GitHub Tarball API error: ${response.status} ${response.statusText}`);
+  }
+
+  // Decompress gzip
+  const ds = new DecompressionStream("gzip");
+  const decompressed = response.body!.pipeThrough(ds);
+  const tarBytes = new Uint8Array(await new Response(decompressed).arrayBuffer());
+
+  // Parse tar entries
+  const files: Array<{ path: string; content: string }> = [];
+  let offset = 0;
+  const decoder = new TextDecoder();
+
+  while (offset + 512 <= tarBytes.length) {
+    const header = tarBytes.slice(offset, offset + 512);
+
+    // Check for end-of-archive (two zero blocks)
+    if (header.every(b => b === 0)) break;
+
+    // Extract file name (offset 0, 100 bytes) + UStar prefix (offset 345, 155 bytes)
+    const nameRaw = decoder.decode(header.slice(0, 100)).replace(/\0+$/, "");
+    const prefix = decoder.decode(header.slice(345, 500)).replace(/\0+$/, "");
+    const fullName = prefix ? `${prefix}/${nameRaw}` : nameRaw;
+
+    // File size (offset 124, 12 bytes, octal)
+    const sizeStr = decoder.decode(header.slice(124, 136)).replace(/\0+$/, "").trim();
+    const size = sizeStr ? parseInt(sizeStr, 8) : 0;
+
+    // Type flag (offset 156): '0' or '\0' = regular file
+    const typeFlag = header[156];
+    const isFile = typeFlag === 0 || typeFlag === 48; // '\0' or '0'
+
+    offset += 512; // move past header
+
+    if (isFile && size > 0) {
+      // Strip the top-level directory (e.g., "owner-repo-sha/")
+      const slashIdx = fullName.indexOf("/");
+      const relPath = slashIdx >= 0 ? fullName.slice(slashIdx + 1) : fullName;
+
+      if (relPath && shouldSyncFile(relPath, opts)) {
+        const content = decoder.decode(tarBytes.slice(offset, offset + size));
+        files.push({ path: relPath, content });
+      }
+    }
+
+    // Advance past content (padded to 512-byte boundary)
+    offset += Math.ceil(size / 512) * 512;
+  }
+
+  return files;
+}
+
+/** Check if a file path should be synced based on extension/directory filters */
+function shouldSyncFile(
+  path: string,
+  opts: { textExtensions: string[]; sensitiveFiles: string[]; skipDirs: string[] }
+): boolean {
+  const parts = path.split("/");
+  if (parts.some(p => opts.skipDirs.includes(p))) return false;
+  const fileName = parts[parts.length - 1].toLowerCase();
+  if (opts.sensitiveFiles.includes(fileName) || fileName.startsWith(".env.")) return false;
+  const ext = path.split(".").pop()?.toLowerCase();
+  return opts.textExtensions.includes(ext || "");
+}
+
+/**
  * Verify GitHub webhook signature
  */
 export async function verifyWebhookSignature(
