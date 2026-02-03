@@ -60,7 +60,7 @@ OAuth authentication is handled automatically — you'll be prompted to authoriz
 
 ## MCP Tools
 
-Brainstem exposes five tools over MCP:
+Brainstem exposes six tools over MCP:
 
 | Tool | Description |
 |------|-------------|
@@ -68,7 +68,8 @@ Brainstem exposes five tools over MCP:
 | `get_document` | Retrieve the full contents of a file by its path. |
 | `list_recent` | List recently modified files, optionally filtered by path prefix. |
 | `list_folders` | Browse the folder structure of your repo. |
-| `brain_inbox` | Add a quick note to your inbox folder, committed directly to GitHub. |
+| `brain_inbox` | Compose a note for your inbox. In Claude Desktop, opens an interactive composer with live markdown preview, 5-second auto-save countdown, and edit/cancel controls. Notes are saved to both GitHub and the search index. |
+| `about` | Information about your Brainstem instance and available content. |
 
 ## How Sync Works
 

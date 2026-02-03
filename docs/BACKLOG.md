@@ -1,6 +1,6 @@
 # Product Backlog
 
-**Last updated:** 2026-01-31
+**Last updated:** 2026-02-02
 
 ---
 
@@ -108,6 +108,7 @@ Items completed in v4.0-v4.3, for changelog reference:
 - **PKCE support:** S256 code challenge/verifier in OAuth flow
 - **Claude.ai connector:** Automatic OAuth discovery, DCR, PKCE — connect with just the MCP URL
 - **brain_inbox tool:** Always registered (removed conditional on inbox folder existence); renamed from `inbox` to `brain_inbox` for clarity
+- **Brain Inbox Composer (MCP App):** Interactive preview-before-save UI using `@modelcontextprotocol/ext-apps`. In Claude Desktop, `brain_inbox` shows a streaming markdown preview, 5-second auto-save countdown, editable title/content, save/cancel buttons. Uses `brain_inbox_save` (app-only tool) via `callServerTool`. Vite + vite-plugin-singlefile build pipeline. See ADR-004
 - **Initial sync on setup:** Background `waitUntil` sync in `/setup/callback` — repo content available within minutes of installation
 - **Account deletion:** `installation.deleted` webhook purges R2 files, D1 records, sessions. Manual `/debug/delete/{uuid}` endpoint also available
 - **OAuth success page UX:** Shows real installation UUID in MCP config (no more placeholder)
@@ -124,4 +125,5 @@ Items completed in v4.0-v4.3, for changelog reference:
 - [ADR-001: GitHub App](adr/001-github-app.md)
 - [ADR-002: Security Isolation](adr/002-security-isolation.md)
 - [ADR-003: Encryption at Rest](adr/003-encryption-at-rest.md)
+- [ADR-004: MCP Apps UI](adr/004-mcp-apps-ui.md)
 - [CLAUDE.md](../CLAUDE.md)

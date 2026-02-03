@@ -74,6 +74,7 @@ GitHub Push → Webhook → Worker → R2 Bucket → AI Search (reindex) → MCP
 - **Auth**: GitHub App + GitHub OAuth 2.0
 - **Language**: TypeScript
 - **Validation**: Zod
+- **MCP Apps UI**: `@modelcontextprotocol/ext-apps` + Vite + `vite-plugin-singlefile`
 
 ## Project Structure
 
@@ -90,10 +91,23 @@ git-brain/
 │   ├── BACKLOG.md             # Product backlog (prioritized)
 │   └── adr/
 │       ├── 001-github-app.md  # GitHub App integration ADR
-│       └── 002-security-isolation.md  # Security & data isolation ADR
-└── src/
-    ├── index.ts           # Main Worker, MCP server, HTTP routes
-    └── github.ts          # GitHub API helpers (auth, fetch files)
+│       ├── 002-security-isolation.md  # Security & data isolation ADR
+│       └── 004-mcp-apps-ui.md # MCP Apps interactive UI ADR
+├── src/
+│   ├── index.ts           # Main Worker, MCP server, HTTP routes
+│   ├── github.ts          # GitHub API helpers (auth, fetch files)
+│   └── html.d.ts          # Type declarations for .html imports
+└── ui/
+    ├── brain-inbox/       # Brain Inbox Composer app source
+    │   ├── index.html     # HTML shell (composing → draft → saving → result states)
+    │   ├── vite.config.ts # Vite + vite-plugin-singlefile build config
+    │   ├── tsconfig.json
+    │   └── src/
+    │       ├── app.ts     # App logic (countdown, editing, callServerTool save)
+    │       ├── app.css    # Styles (host CSS variables for theme integration)
+    │       └── global.css # Base reset
+    └── dist/
+        └── index.html     # Built single-file HTML bundle (generated, not committed)
 ```
 
 ## Secrets Configuration
@@ -163,14 +177,31 @@ All MCP connections require a bearer token from OAuth. The legacy `/mcp` endpoin
 
 ## Registered MCP Tools
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `about` | Get information about Git Brain | none |
-| `search_brain` | Semantic search via AI Search | `query`, `limit?` |
-| `get_document` | Retrieve document from R2 by path | `path` |
-| `list_recent` | List recently modified files | `limit?`, `path_prefix?` |
-| `list_folders` | Browse folder structure | `path?` |
-| `brain_inbox` | Add a note to the inbox | `title`, `content` |
+| Tool | Description | Parameters | UI |
+|------|-------------|------------|----|
+| `about` | Get information about Git Brain | none | — |
+| `search_brain` | Semantic search via AI Search | `query`, `limit?` | — |
+| `get_document` | Retrieve document from R2 by path | `path` | — |
+| `list_recent` | List recently modified files | `limit?`, `path_prefix?` | — |
+| `list_folders` | Browse folder structure | `path?` | — |
+| `brain_inbox` | Compose a note for the inbox (preview before save) | `title`, `content` | ✅ Composer |
+| `brain_inbox_save` | Save a composed note (R2 + GitHub) | `title`, `content`, `filePath` | app-only |
+
+### Brain Inbox Composer (MCP App)
+
+The `brain_inbox` tool is paired with an interactive UI via the MCP Apps extension (`@modelcontextprotocol/ext-apps`). In UI-capable hosts like Claude Desktop:
+
+1. **Streaming preview** — Note content renders progressively as Claude generates it (`ontoolinputpartial`)
+2. **Draft review** — Editable title + content fields with a **5-second countdown bar**
+3. **Countdown behavior** — If the user doesn't interact, the note auto-saves after 5s. If they tap or start editing, the countdown pauses and they get manual Save/Cancel buttons
+4. **Save** — The app calls `brain_inbox_save` via `callServerTool` (app-only tool, hidden from the model). Shows R2/GitHub status on completion
+5. **Cancel** — Discards the note without saving
+
+In non-UI hosts (Claude.ai web, Claude Code), `brain_inbox` returns the draft text as a fallback. The note is not auto-saved in this case.
+
+**Build pipeline:** `npm run build:ui` → Vite bundles the app into a single HTML file (`ui/dist/index.html`) → Wrangler imports it as a text module → served via `registerAppResource`. The `deploy` and `dev` scripts run `build:ui` automatically.
+
+See [ADR-004](docs/adr/004-mcp-apps-ui.md) for the architecture decision.
 
 ## AI Search Reindex API
 
@@ -192,13 +223,16 @@ The cooldown period is ~30 seconds between syncs. Error code `7020` (`sync_in_co
 # Install dependencies
 npm install
 
+# Build MCP App UI bundles (runs automatically before dev/deploy)
+npm run build:ui
+
 # Run locally (note: AI Search won't work locally)
 npm run dev
 
 # Type check
 npm run typecheck
 
-# Deploy to Cloudflare
+# Deploy to Cloudflare (builds UI first)
 npm run deploy
 
 # Test MCP connection (REQUIRED after changes)
@@ -442,6 +476,15 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 ## Current Status
 
+**v4.5 — MCP Apps Interactive UI:**
+- ✅ Brain Inbox Composer: interactive preview-before-save with 5s countdown, editing, cancel
+- ✅ `brain_inbox` → compose-only (returns draft); `brain_inbox_save` → app-only save tool
+- ✅ MCP Apps extension integration (`@modelcontextprotocol/ext-apps`)
+- ✅ Vite + vite-plugin-singlefile build pipeline for app UI bundles
+- ✅ `npm run build:ui` runs automatically before dev/deploy
+- ✅ Streaming preview via `ontoolinputpartial` as Claude generates note content
+- ✅ ADR-004: MCP Apps architecture decision documented
+
 **v4.4 — Tarball Sync + Security Transparency:**
 - ✅ All MCP endpoints require OAuth bearer token
 - ✅ Legacy `/mcp` endpoint removed
@@ -455,7 +498,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 - ✅ Dynamic Client Registration (`/oauth/register`)
 - ✅ PKCE support (S256)
 - ✅ Claude.ai automatic connector integration
-- ✅ 6 MCP tools: about, search_brain, get_document, list_recent, list_folders, brain_inbox
+- ✅ 7 MCP tools: about, search_brain, get_document, list_recent, list_folders, brain_inbox, brain_inbox_save
 - ✅ Initial sync on setup (background via `waitUntil`)
 - ✅ Account deletion: R2 purge, D1 cleanup, session revocation on GitHub App uninstall
 - ✅ Manual deletion via `/debug/delete/{uuid}`
@@ -480,6 +523,10 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 4. **No application-layer encryption** — User files in R2 are encrypted with Cloudflare-managed keys (AES-256-GCM) but are readable by the platform operator. This was analyzed thoroughly in ADR-003 and is an intentional tradeoff: application-layer encryption is incompatible with AI Search. See `docs/adr/003-encryption-at-rest.md`.
 
+5. **brain_inbox non-UI fallback** — In non-UI hosts (Claude.ai web, Claude Code), `brain_inbox` returns the draft text but does not auto-save. The `brain_inbox_save` tool has `visibility: ["app"]` so the model can't call it. Notes composed in non-UI hosts remain unsaved unless the user copies the content manually.
+
+6. **MCP Apps host support** — MCP Apps is an extension spec currently supported in Claude Desktop. Claude.ai web support is TBD.
+
 ## Backlog
 
 See [docs/BACKLOG.md](docs/BACKLOG.md) for the full prioritized product backlog.
@@ -491,3 +538,4 @@ See [docs/BACKLOG.md](docs/BACKLOG.md) for the full prioritized product backlog.
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [R2 Documentation](https://developers.cloudflare.com/r2/)
 - [GitHub Apps](https://docs.github.com/en/apps)
+- [MCP Apps Extension](https://github.com/modelcontextprotocol/ext-apps)

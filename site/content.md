@@ -83,7 +83,7 @@ Brain Stem exposes six tools over MCP. Your AI client discovers them automatical
 
 **list_folders** — Browse the folder structure of your repo. Helps your AI understand how your knowledge base is organized.
 
-**brain_inbox** — Add a note to the brain's inbox. Creates a timestamped `.md` file in the `inbox/` folder of your GitHub repo. The folder is created automatically on first use — no setup required. Notes are committed directly to GitHub (so they appear in your repo) and also written to the search index. Use this to capture thoughts, reminders, or context from any AI conversation. Parameters: `title` (string) — short title for the note, used as filename (e.g. "grocery-list"); `content` (string) — the markdown content of the note.
+**brain_inbox** — Add a note to the brain's inbox. In Claude Desktop, this opens an interactive composer with a live markdown preview, a 5-second countdown before auto-save, and the ability to edit or cancel before the note is committed. Notes are saved to both your GitHub repo and the search index. In other clients, the note content is returned as text.
 
 **about** — Returns information about your Brain Stem instance, including what content is available and how to use the other tools.
 

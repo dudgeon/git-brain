@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>Brain Inbox Composer</title>
+</head>
+<body>
+  <main class="main">
+    <!-- Streaming state: shows while Claude is generating the note -->
+    <div id="composing" class="state">
+      <div class="header">
+        <span class="icon">✏️</span>
+        <h1 id="compose-title">Composing note…</h1>
+      </div>
+      <div class="preview">
+        <div id="preview-content" class="preview-content"></div>
+      </div>
+    </div>
+
+    <!-- Draft state: note ready, countdown before auto-save -->
+    <div id="draft" class="state" style="display:none">
+      <div class="header">
+        <span class="icon">📝</span>
+        <h1 id="draft-title">Review note</h1>
+      </div>
+      <div class="countdown-bar-track">
+        <div id="countdown-bar" class="countdown-bar"></div>
+      </div>
+      <div id="countdown-label" class="countdown-label">Saving in 5s…</div>
+      <input id="edit-title" class="edit-title" type="text" placeholder="Note title" />
+      <textarea id="edit-content" class="edit-content"></textarea>
+      <div class="draft-actions">
+        <button id="save-btn" class="btn btn-save">Save now</button>
+        <button id="cancel-btn" class="btn btn-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Saving state -->
+    <div id="saving" class="state" style="display:none">
+      <div class="header">
+        <span class="icon">⏳</span>
+        <h1>Saving…</h1>
+      </div>
+    </div>
+
+    <!-- Result state: shows after save completes -->
+    <div id="result" class="state" style="display:none">
+      <div class="header">
+        <span id="result-icon" class="icon">✅</span>
+        <h1 id="result-title">Note saved</h1>
+      </div>
+      <div id="result-path" class="file-path"></div>
+      <div id="result-details" class="details"></div>
+      <div id="preview-final" class="preview">
+        <div id="preview-final-content" class="preview-content"></div>
+      </div>
+      <div class="actions">
+        <button id="another-btn" class="btn">Save another note</button>
+      </div>
+    </div>
+  </main>
+  <script type="module" src="/src/app.ts"></script>
+</body>
+</html>

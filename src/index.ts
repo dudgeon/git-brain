@@ -2,6 +2,11 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  registerAppTool,
+  registerAppResource,
+  RESOURCE_MIME_TYPE,
+} from "@modelcontextprotocol/ext-apps/server";
+import {
   getInstallationToken,
   getInstallationRepos,
   fetchRepoContents,
@@ -13,6 +18,7 @@ import {
 } from "./github";
 import logoPng from "../site/brainstem_logo.png";
 import diagramPng from "../site/brainstem-diagram.png";
+import brainInboxHtml from "../ui/dist/index.html";
 
 // Environment bindings type
 export interface Env extends GitHubEnv {
@@ -217,6 +223,9 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
     this.registerListRecent();
     this.registerListFolders();
     await this.registerInbox();
+
+    // Register MCP App UI resource for brain_inbox composer
+    this.registerInboxAppResource();
   }
 
   /**
@@ -511,48 +520,87 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
   }
 
   /**
-   * brain_inbox - Accept notes and add them as .md files to the inbox folder
+   * brain_inbox - Compose a note for the inbox (preview before save in UI hosts)
    */
+  private static readonly INBOX_RESOURCE_URI = "ui://brain-inbox/composer.html";
+
   private async registerInbox() {
-    this.server.tool(
+    // Compose tool — returns draft as structured content, does NOT save.
+    // In UI hosts the composer app handles countdown + editing + save via brain_inbox_save.
+    // In non-UI hosts the text fallback includes the full note content.
+    registerAppTool(
+      this.server,
       "brain_inbox",
-      "Add a note to the brain's inbox. Creates a new .md file in the inbox/ folder of the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder for later.",
       {
-        title: z
-          .string()
-          .describe(
-            "Short title for the note (used as filename, e.g. 'grocery-list')"
-          ),
-        content: z
-          .string()
-          .describe("The markdown content of the note"),
+        description: "Add a note to the brain's inbox. Creates a new .md file in the inbox/ folder of the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder for later. In UI-capable hosts, shows an interactive preview before saving.",
+        inputSchema: {
+          title: z
+            .string()
+            .describe(
+              "Short title for the note (used as filename, e.g. 'grocery-list')"
+            ),
+          content: z
+            .string()
+            .describe("The markdown content of the note"),
+        },
+        _meta: { ui: { resourceUri: HomeBrainMCP.INBOX_RESOURCE_URI } },
       },
       async ({ title, content }) => {
-        try {
-          // Sanitize title for use as filename
-          const safeTitle = title
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .slice(0, 80);
-          const timestamp = new Date()
-            .toISOString()
-            .replace(/[:.]/g, "-")
-            .slice(0, 19);
-          const filename = `${timestamp}-${safeTitle}.md`;
-          const filePath = `inbox/${filename}`;
+        // Generate the file path that will be used on save
+        const safeTitle = title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "")
+          .slice(0, 80);
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .slice(0, 19);
+        const filename = `${timestamp}-${safeTitle}.md`;
+        const filePath = `inbox/${filename}`;
 
-          // Write to R2 (scoped to installation prefix only)
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Note drafted for brain inbox (pending save): ${filePath}\nThe note is being previewed in the composer UI. It has NOT been saved yet — it will be saved after the countdown or when the user clicks Save.`,
+            },
+          ],
+          structuredContent: { title, content, filePath },
+        };
+      }
+    );
+
+    // Save tool — app-only, called by the composer UI after countdown/edit
+    registerAppTool(
+      this.server,
+      "brain_inbox_save",
+      {
+        description: "Save a composed note to the brain inbox (R2 + GitHub).",
+        inputSchema: {
+          title: z.string().describe("Note title"),
+          content: z.string().describe("Markdown content of the note"),
+          filePath: z.string().describe("Target file path (e.g. inbox/2026-01-01T12-00-00-my-note.md)"),
+        },
+        _meta: {
+          ui: {
+            resourceUri: HomeBrainMCP.INBOX_RESOURCE_URI,
+            visibility: ["app"],
+          },
+        },
+      },
+      async ({ title, content, filePath }) => {
+        try {
+          // Write to R2
           await this.env.R2.put(
             `${this.r2Prefix}${filePath}`,
             content
           );
 
-          // Write to GitHub repo so the note persists in the source repo
+          // Write to GitHub repo
           if (this.repoFullName && this.r2Prefix) {
             try {
               const [owner, repo] = this.repoFullName.split("/");
-              // Extract installation UUID from r2Prefix ("brains/{uuid}/")
               const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
               if (installationUuid) {
                 const installation = await this.env.DB.prepare(
@@ -576,7 +624,6 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
               }
             } catch (ghError) {
               console.error("Failed to write to GitHub:", ghError);
-              // Surface error in response for diagnostics
               const ghMsg = ghError instanceof Error ? ghError.message : "unknown";
               return {
                 content: [
@@ -585,6 +632,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
                     text: `Note saved to brain inbox (R2 only): ${filePath}\nGitHub write failed: ${ghMsg}`,
                   },
                 ],
+                structuredContent: { filePath, r2: true, github: false, error: ghMsg },
               };
             }
           }
@@ -596,10 +644,10 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
                 text: `Note saved to brain inbox: ${filePath}`,
               },
             ],
+            structuredContent: { filePath, r2: true, github: true },
           };
         } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "Unknown error";
+          const message = error instanceof Error ? error.message : "Unknown error";
           return {
             content: [
               {
@@ -611,6 +659,24 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           };
         }
       }
+    );
+  }
+
+  /**
+   * Register the MCP App UI resource for the brain_inbox composer
+   */
+  private registerInboxAppResource() {
+    const uri = HomeBrainMCP.INBOX_RESOURCE_URI;
+    registerAppResource(
+      this.server,
+      "Brain Inbox Composer",
+      uri,
+      { mimeType: RESOURCE_MIME_TYPE },
+      async () => ({
+        contents: [
+          { uri, mimeType: RESOURCE_MIME_TYPE, text: brainInboxHtml },
+        ],
+      }),
     );
   }
 
