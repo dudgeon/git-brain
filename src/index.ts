@@ -525,14 +525,14 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
   private static readonly INBOX_RESOURCE_URI = "ui://brain-inbox/composer.html";
 
   private async registerInbox() {
-    // Compose tool — returns draft as structured content, does NOT save.
-    // In UI hosts the composer app handles countdown + editing + save via brain_inbox_save.
-    // In non-UI hosts the text fallback includes the full note content.
+    // Compose tool — returns draft as structured content, does NOT save directly.
+    // In UI hosts: composer app handles countdown + editing + save via brain_inbox_save.
+    // In non-UI hosts: returns draft content only — use brain_inbox_save to actually save.
     registerAppTool(
       this.server,
       "brain_inbox",
       {
-        description: "Add a note to the brain's inbox. Creates a new .md file in the inbox/ folder of the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder for later. In UI-capable hosts, shows an interactive preview before saving.",
+        description: "Preview a note before saving to the inbox (UI hosts only). In UI-capable hosts, shows an interactive composer with editing and countdown before save. For non-UI hosts or AI agents, use brain_inbox_save instead to save notes directly.",
         inputSchema: {
           title: z
             .string()
@@ -563,7 +563,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           content: [
             {
               type: "text" as const,
-              text: `Note drafted for brain inbox (pending save): ${filePath}\nThe note is being previewed in the composer UI. It has NOT been saved yet — it will be saved after the countdown or when the user clicks Save.`,
+              text: `Note draft prepared: ${filePath}\nTitle: ${title}\n\nThis note has NOT been saved yet. In UI hosts, use the composer to review and save. In non-UI hosts, call brain_inbox_save with the title and content to save.`,
             },
           ],
           structuredContent: { title, content, filePath },
@@ -571,26 +571,42 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
       }
     );
 
-    // Save tool — app-only, called by the composer UI after countdown/edit
+    // Save tool — directly saves a note to the inbox. Preferred for non-UI hosts and AI agents.
+    // In UI hosts, the composer app may call this after countdown/edit.
     registerAppTool(
       this.server,
       "brain_inbox_save",
       {
-        description: "Save a composed note to the brain inbox (R2 + GitHub).",
+        description: "Save a note to the brain inbox. Creates a .md file in the inbox/ folder, writes to both R2 and the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder. Provide a short title (used as filename) and the markdown content.",
         inputSchema: {
-          title: z.string().describe("Note title"),
-          content: z.string().describe("Markdown content of the note"),
-          filePath: z.string().describe("Target file path (e.g. inbox/2026-01-01T12-00-00-my-note.md)"),
+          title: z.string().describe("Short title for the note (used as filename, e.g. 'grocery-list')"),
+          content: z.string().describe("The markdown content of the note"),
+          filePath: z.string().optional().describe("Optional custom file path. If omitted, auto-generates as inbox/{timestamp}-{title}.md"),
         },
         _meta: {
           ui: {
             resourceUri: HomeBrainMCP.INBOX_RESOURCE_URI,
-            visibility: ["app"],
           },
         },
       },
-      async ({ title, content, filePath }) => {
+      async ({ title, content, filePath: providedPath }) => {
         try {
+          // Generate file path if not provided
+          let filePath = providedPath;
+          if (!filePath) {
+            const safeTitle = title
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-|-$/g, "")
+              .slice(0, 80);
+            const timestamp = new Date()
+              .toISOString()
+              .replace(/[:.]/g, "-")
+              .slice(0, 19);
+            const filename = `${timestamp}-${safeTitle}.md`;
+            filePath = `inbox/${filename}`;
+          }
+
           // Write to R2
           await this.env.R2.put(
             `${this.r2Prefix}${filePath}`,

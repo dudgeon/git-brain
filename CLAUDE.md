@@ -184,20 +184,22 @@ All MCP connections require a bearer token from OAuth. The legacy `/mcp` endpoin
 | `get_document` | Retrieve document from R2 by path | `path` | — |
 | `list_recent` | List recently modified files | `limit?`, `path_prefix?` | — |
 | `list_folders` | Browse folder structure | `path?` | — |
-| `brain_inbox` | Compose a note for the inbox (preview before save) | `title`, `content` | ✅ Composer |
-| `brain_inbox_save` | Save a composed note (R2 + GitHub) | `title`, `content`, `filePath` | app-only |
+| `brain_inbox` | Preview a note before saving (UI hosts only) | `title`, `content` | ✅ Composer |
+| `brain_inbox_save` | Save a note to the inbox (R2 + GitHub) | `title`, `content`, `filePath?` | — |
 
-### Brain Inbox Composer (MCP App)
+### Brain Inbox Tools
 
-The `brain_inbox` tool is paired with an interactive UI via the MCP Apps extension (`@modelcontextprotocol/ext-apps`). In UI-capable hosts like Claude Desktop:
+**For AI agents and non-UI hosts:** Use `brain_inbox_save` directly — it saves the note to both R2 and GitHub in one call. The `filePath` parameter is optional; if omitted, a timestamped filename is auto-generated.
+
+**For UI-capable hosts (Claude Desktop):** The `brain_inbox` tool is paired with an interactive composer UI via the MCP Apps extension (`@modelcontextprotocol/ext-apps`):
 
 1. **Streaming preview** — Note content renders progressively as Claude generates it (`ontoolinputpartial`)
 2. **Draft review** — Editable title + content fields with a **5-second countdown bar**
 3. **Countdown behavior** — If the user doesn't interact, the note auto-saves after 5s. If they tap or start editing, the countdown pauses and they get manual Save/Cancel buttons
-4. **Save** — The app calls `brain_inbox_save` via `callServerTool` (app-only tool, hidden from the model). Shows R2/GitHub status on completion
+4. **Save** — The app calls `brain_inbox_save` via `callServerTool`. Shows R2/GitHub status on completion
 5. **Cancel** — Discards the note without saving
 
-In non-UI hosts (Claude.ai web, Claude Code), `brain_inbox` returns the draft text as a fallback. The note is not auto-saved in this case.
+In non-UI hosts, `brain_inbox` returns the draft text but does NOT save. Use `brain_inbox_save` to persist the note.
 
 **Build pipeline:** `npm run build:ui` → Vite bundles the app into a single HTML file (`ui/dist/index.html`) → Wrangler imports it as a text module → served via `registerAppResource`. The `deploy` and `dev` scripts run `build:ui` automatically.
 
@@ -478,7 +480,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 **v4.5 — MCP Apps Interactive UI:**
 - ✅ Brain Inbox Composer: interactive preview-before-save with 5s countdown, editing, cancel
-- ✅ `brain_inbox` → compose-only (returns draft); `brain_inbox_save` → app-only save tool
+- ✅ `brain_inbox` → UI preview (returns draft); `brain_inbox_save` → direct save (preferred for non-UI hosts)
 - ✅ MCP Apps extension integration (`@modelcontextprotocol/ext-apps`)
 - ✅ Vite + vite-plugin-singlefile build pipeline for app UI bundles
 - ✅ `npm run build:ui` runs automatically before dev/deploy
@@ -523,9 +525,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 4. **No application-layer encryption** — User files in R2 are encrypted with Cloudflare-managed keys (AES-256-GCM) but are readable by the platform operator. This was analyzed thoroughly in ADR-003 and is an intentional tradeoff: application-layer encryption is incompatible with AI Search. See `docs/adr/003-encryption-at-rest.md`.
 
-5. **brain_inbox non-UI fallback** — In non-UI hosts (Claude.ai web, Claude Code), `brain_inbox` returns the draft text but does not auto-save. The `brain_inbox_save` tool has `visibility: ["app"]` so the model can't call it. Notes composed in non-UI hosts remain unsaved unless the user copies the content manually.
-
-6. **MCP Apps host support** — MCP Apps is an extension spec currently supported in Claude Desktop. Claude.ai web support is TBD.
+5. **MCP Apps host support** — MCP Apps is an extension spec currently supported in Claude Desktop. Claude.ai web support is TBD. For non-UI hosts, use `brain_inbox_save` directly.
 
 ## Backlog
 
