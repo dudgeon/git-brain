@@ -12,6 +12,17 @@
 
 ## High — Security & correctness
 
+### Implement CI/CD pipeline → [ADR-005](adr/005-ci-cd-deployment.md)
+
+Enable mobile-friendly deployment: Claude pushes to branch, creates PR, auto-merges on typecheck pass, deploys to Cloudflare.
+
+**Implementation steps:**
+1. Create `.github/workflows/typecheck.yml` (runs on PRs)
+2. Create `.github/workflows/deploy.yml` (runs on push to main)
+3. Add `CLOUDFLARE_API_TOKEN` to GitHub repository secrets
+4. Configure branch protection on `main` (require PR, require typecheck, allow auto-merge)
+5. Update CLAUDE.md with new workflow: `gh pr create --fill && gh pr merge --auto --squash`
+
 ### ~~User data encryption at rest~~ → [ADR-003](adr/003-encryption-at-rest.md)
 
 Decided: R2 already encrypts at rest (Cloudflare-managed AES-256-GCM). Application-layer encryption is incompatible with AI Search (which reads R2 directly) and any scheme where the Worker holds keys doesn't protect against the operator. Phase 1: document trust model and add disclosures (done). Phase 2: per-user R2 + AI Search instances for hard tenant isolation. Phase 3 (aspirational): BYOA model for true operator-blindness.
@@ -127,4 +138,5 @@ Items completed in v4.0-v4.3, for changelog reference:
 - [ADR-002: Security Isolation](adr/002-security-isolation.md)
 - [ADR-003: Encryption at Rest](adr/003-encryption-at-rest.md)
 - [ADR-004: MCP Apps UI](adr/004-mcp-apps-ui.md)
+- [ADR-005: CI/CD Deployment](adr/005-ci-cd-deployment.md)
 - [CLAUDE.md](../CLAUDE.md)
