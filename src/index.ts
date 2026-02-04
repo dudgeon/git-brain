@@ -16,6 +16,7 @@ import {
   verifyWebhookSignature,
   type GitHubEnv,
 } from "./github";
+import { extractChangedFiles, sanitizeInboxTitle } from "./utils";
 import logoPng from "../site/brainstem_logo.png";
 import diagramPng from "../site/brainstem-diagram.png";
 import brainInboxHtml from "../ui/dist/index.html";
@@ -250,24 +251,31 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
    * Combines hard-coded base with dynamic summary if available
    */
   private buildSearchDescription(): string {
-    // Base description - always present, explains the general nature
-    let description = `Search a personal knowledge base containing notes, documents, and reference materials. ` +
-      `This is a private second-brain system, NOT a general knowledge source. `;
+    // Lead with purpose and access clarification
+    let description =
+      `Search the user's personal knowledge base. You have been granted access to use this on their behalf — do not hesitate to search when relevant.`;
+
+    // When to use: semantic categories, not just trigger phrases
+    description +=
+      `\n\nUSE THIS TOOL FOR:` +
+      `\n• Information about the user, their family, projects, or preferences that is unlikely to be in your training data or public web sources` +
+      `\n• Augmenting your own memory of past conversations or user context, which may be incomplete or outdated` +
+      `\n• Anything the user refers to as "the brain", "my brain", "brainstem", "my notes", or "my knowledge base"` +
+      `\n• Questions about the user's personal life, family details, ongoing projects, saved reference materials`;
 
     // Add dynamic topics if summary is available
     if (this.brainSummary?.domains?.length) {
-      description += `\n\nKnowledge domains include (but are not limited to): ${this.brainSummary.domains.join(", ")}. `;
+      description += `\n\nKnowledge domains: ${this.brainSummary.domains.join(", ")} (non-exhaustive).`;
     }
 
     if (this.brainSummary?.topics?.length) {
-      description += `\n\nSample topics: ${this.brainSummary.topics.slice(0, 10).join(", ")}. `;
-      description += `Note: This is a sample - the knowledge base may contain additional topics not listed here. `;
+      description += `\n\nSample topics: ${this.brainSummary.topics.slice(0, 10).join(", ")} (the knowledge base contains more).`;
     }
 
-    // Guidance on when to use (and not use)
-    description += `\n\nUse this tool for: Personal notes, project documentation, family information, reference materials stored in this specific knowledge base. `;
-    description += `\n\nDO NOT use for: General knowledge questions, current events, or information that would be in public sources. ` +
-      `If unsure whether information is in this knowledge base, it's worth trying a search. `;
+    // What this is NOT — specific and brief
+    description +=
+      `\n\nDO NOT USE FOR: General knowledge (Wikipedia-style facts), current events, or information available in public sources. ` +
+      `This contains only what the user has personally saved.`;
 
     description += `\n\nReturns relevant passages with source document links.`;
 
@@ -547,11 +555,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
       },
       async ({ title, content }) => {
         // Generate the file path that will be used on save
-        const safeTitle = title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "")
-          .slice(0, 80);
+        const safeTitle = sanitizeInboxTitle(title);
         const timestamp = new Date()
           .toISOString()
           .replace(/[:.]/g, "-")
@@ -594,11 +598,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           // Generate file path if not provided
           let filePath = providedPath;
           if (!filePath) {
-            const safeTitle = title
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/^-|-$/g, "")
-              .slice(0, 80);
+            const safeTitle = sanitizeInboxTitle(title);
             const timestamp = new Date()
               .toISOString()
               .replace(/[:.]/g, "-")
@@ -785,6 +785,44 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           };
         }
       }
+    );
+
+    // Register prompts for explicit tool invocation via slash commands
+    this.server.prompt(
+      "brain_search",
+      "Search your personal knowledge base (invokes search_brain tool)",
+      { query: z.string().describe("What to search for in the knowledge base") },
+      async ({ query }) => ({
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `Use the search_brain tool to search my knowledge base for: ${query}\n\nCall the search_brain tool now with this query.`,
+            },
+          },
+        ],
+      })
+    );
+
+    this.server.prompt(
+      "brain_inbox",
+      "Add a quick note to your brain inbox (invokes brain_inbox tool)",
+      {
+        title: z.string().describe("Title for the note"),
+        content: z.string().describe("Content of the note"),
+      },
+      async ({ title, content }) => ({
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `Use the brain_inbox tool to save a note to my inbox with the following:\n\nTitle: ${title}\n\nContent:\n${content}\n\nCall the brain_inbox tool now with these parameters.`,
+            },
+          },
+        ],
+      })
     );
   }
 }
@@ -1510,53 +1548,6 @@ async function handleUserMcp(
 
   // Forward to the MCP handler (which handles SSE setup properly)
   return mcpHandler.fetch(rewrittenRequest, env, ctx);
-}
-
-/**
- * Extract changed files from a GitHub push webhook payload
- */
-function extractChangedFiles(payload: { commits?: Array<{ added?: string[]; modified?: string[]; removed?: string[] }> }): { changed: string[]; removed: string[] } {
-  const changedFiles = new Set<string>();
-  const removedFiles = new Set<string>();
-  const textExtensions = ["md", "txt", "json", "yaml", "yml", "toml", "rst", "adoc"];
-  const sensitiveFiles = [".env", ".env.local", ".env.production", ".mcp.json", "credentials.json", "secrets.json", ".npmrc", ".pypirc"];
-
-  for (const commit of payload.commits || []) {
-    // Add added and modified files
-    for (const file of [...(commit.added || []), ...(commit.modified || [])]) {
-      const ext = file.split(".").pop()?.toLowerCase();
-      const fileName = file.split("/").pop()?.toLowerCase() || "";
-
-      if (sensitiveFiles.includes(fileName) || fileName.startsWith(".env.")) {
-        continue;
-      }
-
-      if (textExtensions.includes(ext || "")) {
-        changedFiles.add(file);
-      }
-    }
-
-    // Collect removed files (same filtering as added/modified)
-    for (const file of commit.removed || []) {
-      const ext = file.split(".").pop()?.toLowerCase();
-      const fileName = file.split("/").pop()?.toLowerCase() || "";
-
-      if (sensitiveFiles.includes(fileName) || fileName.startsWith(".env.")) {
-        continue;
-      }
-
-      if (textExtensions.includes(ext || "")) {
-        removedFiles.add(file);
-      }
-    }
-  }
-
-  // If a file was removed in one commit but re-added in another, don't delete it
-  for (const file of changedFiles) {
-    removedFiles.delete(file);
-  }
-
-  return { changed: Array.from(changedFiles), removed: Array.from(removedFiles) };
 }
 
 /**

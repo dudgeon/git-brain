@@ -20,9 +20,21 @@ async function main() {
   await client.connect(transport);
   console.log("Connected!");
 
+  // Check server capabilities
+  const serverInfo = client.getServerVersion();
+  const serverCaps = client.getServerCapabilities();
+  console.log("\n=== Server Info ===");
+  console.log(JSON.stringify(serverInfo, null, 2));
+  console.log("\n=== Server Capabilities ===");
+  console.log(JSON.stringify(serverCaps, null, 2));
+
   const tools = await client.listTools();
   console.log("\n=== Available Tools ===");
   console.log(JSON.stringify(tools, null, 2));
+
+  const prompts = await client.listPrompts();
+  console.log("\n=== Available Prompts (Slash Commands) ===");
+  console.log(JSON.stringify(prompts, null, 2));
 
   await client.close();
 }

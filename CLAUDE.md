@@ -89,10 +89,7 @@ git-brain/
 ├── test-user-mcp.mjs      # MCP endpoint test (authenticated, production)
 ├── docs/
 │   ├── BACKLOG.md             # Product backlog (prioritized)
-│   └── adr/
-│       ├── 001-github-app.md  # GitHub App integration ADR
-│       ├── 002-security-isolation.md  # Security & data isolation ADR
-│       └── 004-mcp-apps-ui.md # MCP Apps interactive UI ADR
+│   └── adr/                   # Architecture Decision Records
 ├── src/
 │   ├── index.ts           # Main Worker, MCP server, HTTP routes
 │   ├── github.ts          # GitHub API helpers (auth, fetch files)
@@ -106,8 +103,17 @@ git-brain/
     │       ├── app.ts     # App logic (countdown, editing, callServerTool save)
     │       ├── app.css    # Styles (host CSS variables for theme integration)
     │       └── global.css # Base reset
+    ├── brain-explorer/    # Brain Explorer app source
+    │   ├── brain-explorer.html  # HTML shell (results drawer, viewer, folders)
+    │   ├── vite.config.ts
+    │   ├── tsconfig.json
+    │   └── src/
+    │       ├── app.ts     # App logic (callServerTool, updateModelContext, fullscreen)
+    │       ├── app.css    # Styles (collapsible drawer, host CSS variables)
+    │       └── global.css
     └── dist/
-        └── index.html     # Built single-file HTML bundle (generated, not committed)
+        ├── index.html           # Brain Inbox bundle (generated)
+        └── brain-explorer.html  # Brain Explorer bundle (generated)
 ```
 
 ## Secrets Configuration
@@ -180,10 +186,10 @@ All MCP connections require a bearer token from OAuth. The legacy `/mcp` endpoin
 | Tool | Description | Parameters | UI |
 |------|-------------|------------|----|
 | `about` | Get information about Git Brain | none | — |
-| `search_brain` | Semantic search via AI Search | `query`, `limit?` | — |
-| `get_document` | Retrieve document from R2 by path | `path` | — |
-| `list_recent` | List recently modified files | `limit?`, `path_prefix?` | — |
-| `list_folders` | Browse folder structure | `path?` | — |
+| `search_brain` | Semantic search via AI Search | `query`, `limit?` | ✅ Explorer |
+| `get_document` | Retrieve document from R2 by path | `path` | ✅ Explorer |
+| `list_recent` | List recently modified files | `limit?`, `path_prefix?` | ✅ Explorer |
+| `list_folders` | Browse folder structure | `path?` | ✅ Explorer |
 | `brain_inbox` | Preview a note before saving (UI hosts only) | `title`, `content` | ✅ Composer |
 | `brain_inbox_save` | Save a note to the inbox (R2 + GitHub) | `title`, `content`, `filePath?` | — |
 
@@ -203,7 +209,7 @@ In non-UI hosts, `brain_inbox` returns the draft text but does NOT save. Use `br
 
 **Build pipeline:** `npm run build:ui` → Vite bundles the app into a single HTML file (`ui/dist/index.html`) → Wrangler imports it as a text module → served via `registerAppResource`. The `deploy` and `dev` scripts run `build:ui` automatically.
 
-See [ADR-004](docs/adr/004-mcp-apps-ui.md) for the architecture decision.
+See `docs/adr/` for architecture decisions (ADR-004: inbox composer, ADR-006: explorer).
 
 ## AI Search Reindex API
 
@@ -218,6 +224,14 @@ PATCH /autorag/rags/{name}/full_scan  # DOES NOT WORK
 ```
 
 The cooldown period is ~30 seconds between syncs. Error code `7020` (`sync_in_cooldown`) is handled gracefully as success.
+
+### AI Search Data Notes
+
+**Filenames include R2 prefix**: Search results from `env.AI.autorag().search()` return `r.filename` with the full R2 path including `brains/{uuid}/`. This must be stripped for:
+- Display in UI (user shouldn't see internal paths)
+- Building GitHub URLs via `getSourceUrl()` (expects repo-relative paths)
+
+**Content is matched chunks**: `r.content` contains the semantically matched chunks, not the beginning of the file. This is the relevant context. But raw chunk text may need cleanup (collapse whitespace, truncate at word boundaries).
 
 ## Development Commands
 
@@ -250,6 +264,8 @@ node test-user-mcp.mjs
 3. Run `node test-user-mcp.mjs` to verify the MCP server responds correctly (requires valid bearer token)
 
 **Do NOT rely on the user to test MCP functionality.** Always verify the deployment works before reporting success.
+
+**For MCP Apps changes:** API tests verify data structure, but visual UX needs testing in Claude Desktop. Ask the user to verify UI after API tests pass.
 
 ### Test Script Output
 

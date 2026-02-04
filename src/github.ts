@@ -348,7 +348,7 @@ export async function fetchRepoTarballFiles(
 }
 
 /** Check if a file path should be synced based on extension/directory filters */
-function shouldSyncFile(
+export function shouldSyncFile(
   path: string,
   opts: { textExtensions: string[]; sensitiveFiles: string[]; skipDirs: string[] }
 ): boolean {

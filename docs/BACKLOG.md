@@ -1,20 +1,12 @@
 # Product Backlog
 
-**Last updated:** 2026-02-02
+**Last updated:** 2026-02-03
 
 ---
 
 ## Critical — Blocking core functionality
 
-### Deploy brain_inbox tools update
-
-Branch `claude/update-tools-metadata-8STBS` has changes ready to deploy:
-- `brain_inbox_save` is now callable by models directly (removed `visibility: ["app"]`)
-- `filePath` parameter is optional with auto-generation
-- `brain_inbox` description clarifies it's for UI hosts only
-- Non-UI hosts and AI agents should use `brain_inbox_save` instead
-
-**Action:** Run `npm run deploy` with Cloudflare credentials, then verify with `node test-user-mcp.mjs`
+*(No critical items)*
 
 ---
 
@@ -104,6 +96,7 @@ The setup page is minimal. Could add progress indicators, repo selection (for mu
 
 Items completed in v4.4+:
 
+- **Tool metadata enhancements (v4.5):** Updated `brain_inbox` and `brain_inbox_save` tool descriptions to guide clients on which tool to use. `brain_inbox_save` is now callable by models directly (removed `visibility: ["app"]`) with optional `filePath` parameter and auto-generation. `brain_inbox` description clarifies it's for UI hosts only. Non-UI hosts and AI agents should use `brain_inbox_save` instead for direct saves.
 - **File deletion sync:** `extractChangedFiles` now returns both changed and removed files. `syncChangedFiles` deletes removed files from R2 and triggers AI Search reindex. Brain summary is regenerated after deletions. Also handles file moves (git treats moves as remove + add). AI Search takes 2-3 minutes to process deletion from its vector index — this is expected Cloudflare behavior, not a bug.
 - **Initial sync subrequest limit fix:** `syncRepo` previously fetched each file individually via the Git Blobs API (1 external subrequest per file), hitting the Workers free-plan 50-subrequest limit. Repos with >50 files silently stopped syncing partway through (e.g., 51/136 files). Replaced with GitHub Tarball API approach — downloads the entire repo as a gzip tarball in 1 subrequest, extracts and filters in-memory, then writes to R2 (internal bindings, no limit).
 

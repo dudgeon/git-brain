@@ -1,0 +1,8 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  background: var(--color-background-primary, #ffffff);
+  color: var(--color-text-primary, #1a1a1a);
+  line-height: 1.5;
+}

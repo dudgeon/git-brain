@@ -5,11 +5,12 @@
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
-    "build:ui": "vite build --config ui/brain-inbox/vite.config.ts",
+    "build:ui": "vite build --config ui/brain-inbox/vite.config.ts && vite build --config ui/brain-explorer/vite.config.ts",
     "dev": "npm run build:ui && wrangler dev",
     "deploy": "npm run build:ui && wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
@@ -29,6 +30,7 @@
     "typescript": "^5.7.2",
     "vite": "^7.3.1",
     "vite-plugin-singlefile": "^2.3.0",
+    "vitest": "^4.0.18",
     "wrangler": "^4.60.0"
   },
   "dependencies": {
