@@ -6,7 +6,15 @@
 
 ## Critical — Blocking core functionality
 
-*(No critical items)*
+### Deploy brain_inbox tools update
+
+Branch `claude/update-tools-metadata-8STBS` has changes ready to deploy:
+- `brain_inbox_save` is now callable by models directly (removed `visibility: ["app"]`)
+- `filePath` parameter is optional with auto-generation
+- `brain_inbox` description clarifies it's for UI hosts only
+- Non-UI hosts and AI agents should use `brain_inbox_save` instead
+
+**Action:** Run `npm run deploy` with Cloudflare credentials, then verify with `node test-user-mcp.mjs`
 
 ---
 
