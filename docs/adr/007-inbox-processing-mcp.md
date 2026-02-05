@@ -78,6 +78,123 @@ From these results, Claude can infer:
 
 This is the foundational insight: **use AI Search not just for content retrieval, but for entity resolution and structure discovery.**
 
+### The Hard Problem: Novel and Ambiguous Entities
+
+The approach above works well for established entities with dedicated content. But it fails for:
+
+**1. Novel entities** — A note about "Poker night with Dave" where Dave is a new friend with no existing content. Search returns nothing useful. The item gets stuck in inbox with no suggestion.
+
+**2. Name collisions** — "Dave" matches father-in-law Dave who has content at `family/in-laws/dave/`. But this is friend Dave, a different person. Wrong match.
+
+**3. Tangential mentions** — Dave appears in cousin Ben's notes ("Ben and Dave grabbed lunch") as a supporting character. Search finds Ben's folder. But new content *about* Dave shouldn't go in Ben's folder.
+
+The core issue: **search results are hypotheses, not answers**. The system must evaluate result quality and distinguish between:
+- **Primary content** — Files *about* an entity (dedicated folder, entity in title)
+- **Tangential mentions** — Files that *mention* an entity incidentally
+- **No match** — Entity doesn't exist in the brain yet
+
+### Evaluating Match Quality
+
+Several signals indicate whether a search result is a confident match:
+
+**Strong match signals:**
+- Entity appears in the **file path** (e.g., `family/kids/owen/` for "Owen")
+- Multiple files cluster in the **same folder** (2+ hits in `friends/dave/`)
+- High semantic similarity **score** (> 0.85)
+- Result content is **primarily about** the entity, not just mentioning it
+
+**Weak match signals:**
+- Entity only appears **within content**, not in paths
+- Results are **scattered** across unrelated folders
+- Lower similarity scores (0.6-0.75)
+- Entity is a **supporting character** in results about something else
+
+**Novel entity signals:**
+- No results above **threshold** (e.g., score < 0.6)
+- All results are **tangential mentions**
+- Disambiguating context in inbox item (e.g., "my friend Dave from poker") **doesn't match** any result context
+
+### Disambiguation via Context
+
+Bare entity names are ambiguous. But inbox items usually have disambiguating context:
+
+```
+Inbox item: "Notes from poker with Dave S."
+Context entities: ["poker", "Dave S."]
+
+Search "Dave S." → No results (novel entity)
+Search "poker" → hobbies/poker/2025-games.md (score: 0.91)
+
+Analysis:
+- "Dave S." is novel (no strong matches)
+- "poker" has established home at hobbies/poker/
+- Suggested: hobbies/poker/dave-s-notes.md OR friends/dave-s/poker.md (ask user)
+```
+
+The system should extract **contextual entity mentions** ("Dave S.", "my friend Dave", "father-in-law Dave") rather than bare names. More specific queries yield better disambiguation.
+
+### Detecting Primary vs Tangential Content
+
+When search returns results, check whether the entity is primary or tangential:
+
+```typescript
+function isPrimaryContent(searchResult, entity: string): boolean {
+  // Entity in path = primary content
+  if (searchResult.filename.toLowerCase().includes(entity.toLowerCase())) {
+    return true;
+  }
+
+  // Entity in title/H1 = primary content
+  const content = searchResult.content;
+  const titleMatch = content.match(/^#\s+(.+)/m);
+  if (titleMatch && titleMatch[1].toLowerCase().includes(entity.toLowerCase())) {
+    return true;
+  }
+
+  // Otherwise, likely tangential
+  return false;
+}
+```
+
+Filter results to primary content before path voting. If no primary content exists, the entity is likely novel.
+
+### Handling Novel Entities
+
+When confidence is low and no primary content exists, the system should:
+
+1. **Acknowledge uncertainty** — Don't force a bad match
+2. **Suggest domain-based filing** — Infer domain from content type (recipe → `home/recipes/`, meeting → `work/meetings/`)
+3. **Propose new location** — "This appears to be a new person. Suggested: `friends/dave-s/` or `people/dave-s/`"
+4. **Ask the user** — "Where should content about Dave S. live?"
+
+```json
+{
+  "path": "inbox/poker-with-dave.md",
+  "title": "Poker with Dave S.",
+  "entities": ["Dave S.", "poker"],
+  "entity_analysis": {
+    "Dave S.": { "status": "novel", "matches": [], "confidence": 0.2 },
+    "poker": { "status": "matched", "location": "hobbies/poker/", "confidence": 0.91 }
+  },
+  "suggested_action": "create_location",
+  "options": [
+    { "path": "friends/dave-s/poker-notes.md", "reasoning": "New person, topic is poker" },
+    { "path": "hobbies/poker/dave-s.md", "reasoning": "File under established poker location" }
+  ],
+  "requires_input": true,
+  "prompt": "Dave S. appears to be new. Where should content about them live?"
+}
+```
+
+### Learning from User Decisions
+
+When the user chooses a location for a novel entity, that decision should:
+1. **Apply immediately** — File the current item
+2. **Inform future matches** — Next time "Dave S." appears, search will find this content
+3. **Optionally create a stub** — Create `friends/dave-s/README.md` with basic info so the location is established
+
+This creates a **bootstrap loop**: novel entities get locations through user decision, then AI Search finds them for future items. The brain learns its own structure.
+
 ### User Customization
 
 Processing rules are deeply personal. One user might want:
@@ -337,115 +454,218 @@ This is deferred until the core tools are proven.
 
 1. **Rule interpretation: server vs client** — Should the server interpret natural language rules (requires embedded LLM), or should it return rules + entity data for the client Claude to interpret? Client interpretation is simpler but adds tokens; server interpretation requires Claude API access.
 
-2. **Entity extraction quality** — Simple regex extraction works for obvious entities ("Owen", "Project X") but misses implicit references ("my son", "the main project"). Workers AI entity extraction (`@cf/...`) could improve this but adds latency/cost.
+2. **Entity extraction quality** — Simple regex extraction works for obvious entities ("Owen", "Project X") but misses implicit references ("my son", "the main project"). Workers AI NER models could improve this but add latency/cost.
 
-3. **Rule format** — Should rules be pure markdown (flexible but ambiguous) or structured YAML/JSON (precise but less readable)? Markdown feels more natural for users but may cause interpretation inconsistencies.
+3. **Primary content detection** — The `isPrimaryContent` heuristic (entity in path, in H1, high score + early mention) may have false positives/negatives. How do we tune this without labeled data?
 
-4. **Confidence calibration** — How do we tune confidence scores without labeled training data? Could track user overrides over time.
+4. **Novel entity bootstrap** — When creating a location for a novel entity, should we create a stub file (e.g., `friends/dave-s/README.md`) so future searches find it? Or wait for the user to add more content?
 
-5. **Conflict resolution** — What happens when multiple rules match? Priority order? User prompt? Current design surfaces all options; user/Claude decides.
+5. **Name collision handling** — "Dave" (friend) vs "Dave" (father-in-law) both have content. How do we disambiguate? Options:
+   - Require contextual extraction ("my friend Dave" vs "Dave (father-in-law)")
+   - Use user-defined aliases in rules (`Dave S. = friends/dave-s/`)
+   - Ask user to disambiguate when collision detected
 
-6. **Cross-entity relationships** — AI Search finds entities independently. How do we handle relationships ("Owen's swim meet" = Owen + swim, should go where Owen + swim intersect)? Current voting heuristic is simple but may miss nuance.
+6. **Tangential mention threshold** — Current design filters tangential mentions entirely. But tangential data has signal: if "Dave" is mentioned 5x across different domains, that suggests Dave is important even without dedicated content. Should we use mention frequency?
+
+7. **Cross-entity relationships** — AI Search finds entities independently. How do we handle relationships ("Owen's swim meet" = Owen + swim, should go where Owen + swim intersect)? Current voting heuristic is simple but may miss nuance.
+
+8. **Learning from corrections** — When user overrides a suggestion (moves file somewhere else), how do we learn? Options: update rules file, store correction log for future context, or rely on new content establishing the pattern.
 
 ## Implementation Sketch
 
 ```typescript
-// Entity extraction (simple heuristic - could use Workers AI for better extraction)
-function extractEntities(text: string): string[] {
-  // Extract capitalized phrases, quoted terms, hashtags
-  const capitalized = text.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g) || [];
-  const hashtags = text.match(/#\w+/g)?.map(t => t.slice(1)) || [];
-  // Filter out common words, dedupe
-  return [...new Set([...capitalized, ...hashtags])]
-    .filter(e => !['The', 'This', 'That', 'Monday', 'Tuesday'].includes(e))
-    .slice(0, 5); // Limit to top 5 entities
+interface SearchResult {
+  filename: string;
+  content: string;
+  score: number;
 }
 
-// Search for entity and extract path patterns
-async function resolveEntity(env: Env, prefix: string, entity: string): Promise<string[]> {
+interface EntityMatch {
+  status: 'matched' | 'tangential' | 'novel';
+  location: string | null;
+  confidence: number;
+  primaryContent: boolean;
+}
+
+// Check if search result is PRIMARY content about the entity (not just a mention)
+function isPrimaryContent(result: SearchResult, entity: string): boolean {
+  const entityLower = entity.toLowerCase();
+  const pathLower = result.filename.toLowerCase();
+
+  // Entity appears in file path = dedicated content
+  if (pathLower.includes(entityLower.replace(/\s+/g, '-'))) {
+    return true;
+  }
+
+  // Entity in H1 title = primary content
+  const titleMatch = result.content.match(/^#\s+(.+)/m);
+  if (titleMatch?.[1].toLowerCase().includes(entityLower)) {
+    return true;
+  }
+
+  // High score + entity in first 200 chars = likely primary
+  if (result.score > 0.85 && result.content.slice(0, 200).toLowerCase().includes(entityLower)) {
+    return true;
+  }
+
+  return false;
+}
+
+// Resolve entity: search, filter to primary content, determine match quality
+async function resolveEntity(
+  env: Env,
+  prefix: string,
+  entity: string
+): Promise<EntityMatch> {
   const results = await env.AI.autorag({ name: AUTORAG_NAME }).search(entity, {
     filters: { folder: { $startsWith: prefix } },
     rewrite_query: false,
-    max_num_results: 3
+    max_num_results: 5
   });
 
-  // Extract parent folders from result paths
-  return results.map(r => {
-    const path = r.filename.replace(prefix, '');
-    const parts = path.split('/');
-    parts.pop(); // Remove filename
-    return parts.join('/');
-  }).filter(Boolean);
+  if (results.length === 0 || results[0].score < 0.5) {
+    return { status: 'novel', location: null, confidence: 0.2, primaryContent: false };
+  }
+
+  // Filter to primary content only
+  const primaryResults = results.filter(r => isPrimaryContent(r, entity));
+
+  if (primaryResults.length === 0) {
+    // Results exist but all are tangential mentions
+    return {
+      status: 'tangential',
+      location: extractFolder(results[0].filename, prefix),
+      confidence: 0.35,
+      primaryContent: false
+    };
+  }
+
+  // Extract folder from best primary result
+  const bestMatch = primaryResults[0];
+  const folder = extractFolder(bestMatch.filename, prefix);
+
+  // Confidence based on: score, number of primary hits, path clustering
+  const folderCounts = primaryResults.reduce((acc, r) => {
+    const f = extractFolder(r.filename, prefix);
+    acc[f] = (acc[f] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const clusterBonus = (folderCounts[folder] || 1) > 1 ? 0.1 : 0;
+  const confidence = Math.min(bestMatch.score + clusterBonus, 0.95);
+
+  return {
+    status: 'matched',
+    location: folder,
+    confidence,
+    primaryContent: true
+  };
 }
 
-// inbox_analyze tool
-server.tool("inbox_analyze", "Analyze inbox items and suggest processing actions", {}, async () => {
-  const r2Prefix = `brains/${installationUuid}/`;
+function extractFolder(filename: string, prefix: string): string {
+  const path = filename.replace(prefix, '');
+  const parts = path.split('/');
+  parts.pop(); // Remove filename
+  return parts.join('/') || '/';
+}
 
-  // 1. List inbox items
-  const inboxItems = await env.R2.list({ prefix: `${r2Prefix}inbox/` });
+// Analyze a single inbox item
+async function analyzeItem(env: Env, r2Prefix: string, obj: R2Object) {
+  const content = await (await env.R2.get(obj.key))!.text();
+  const title = extractTitle(content);
+  const entities = extractEntities(content);
 
-  // 2. Load rules (or use defaults)
-  const rulesObj = await env.R2.get(`${r2Prefix}_brain_config/inbox_rules.md`);
-  const rules = rulesObj ? await rulesObj.text() : DEFAULT_INBOX_RULES;
+  // Resolve each entity
+  const entityAnalysis: Record<string, EntityMatch> = {};
+  for (const entity of entities) {
+    entityAnalysis[entity] = await resolveEntity(env, r2Prefix, entity);
+  }
 
-  // 3. For each item: extract entities, resolve via search, suggest destination
-  const analysis = await Promise.all(inboxItems.objects.map(async (obj) => {
-    const content = await (await env.R2.get(obj.key))!.text();
-    const title = extractTitle(content);
-    const entities = extractEntities(content);
+  // Determine suggested action based on entity analysis
+  const matchedEntities = Object.entries(entityAnalysis)
+    .filter(([_, m]) => m.status === 'matched');
+  const novelEntities = Object.entries(entityAnalysis)
+    .filter(([_, m]) => m.status === 'novel');
 
-    // Resolve each entity to folder paths via AI Search
-    const entityPaths: Record<string, string[]> = {};
-    for (const entity of entities) {
-      entityPaths[entity] = await resolveEntity(env, r2Prefix, entity);
-    }
-
-    // Find most common path across entities (simple voting)
-    const pathCounts: Record<string, number> = {};
-    Object.values(entityPaths).flat().forEach(p => {
-      pathCounts[p] = (pathCounts[p] || 0) + 1;
+  if (matchedEntities.length > 0) {
+    // Vote among matched entities for best location
+    const locationVotes: Record<string, number> = {};
+    matchedEntities.forEach(([_, m]) => {
+      if (m.location) {
+        locationVotes[m.location] = (locationVotes[m.location] || 0) + m.confidence;
+      }
     });
-    const topPath = Object.entries(pathCounts)
-      .sort((a, b) => b[1] - a[1])[0];
 
-    const suggestedDest = topPath
-      ? `${topPath[0]}/${sanitizeFilename(title)}.md`
-      : null;
-    const confidence = topPath ? Math.min(0.5 + topPath[1] * 0.15, 0.95) : 0.3;
+    const [bestLocation, score] = Object.entries(locationVotes)
+      .sort((a, b) => b[1] - a[1])[0];
 
     return {
       path: obj.key.replace(r2Prefix, ''),
       title,
-      entities,
-      entity_locations: entityPaths,
-      suggested_action: suggestedDest ? 'move' : 'keep',
-      destination: suggestedDest,
-      confidence,
-      reasoning: suggestedDest
-        ? `Entities ${Object.keys(entityPaths).join(', ')} found in ${topPath[0]}/`
-        : 'No strong entity matches found'
+      entities: entityAnalysis,
+      suggested_action: 'move',
+      destination: `${bestLocation}/${sanitizeFilename(title)}.md`,
+      confidence: Math.min(score / matchedEntities.length, 0.95),
+      reasoning: `Strong match: ${matchedEntities.map(([e]) => e).join(', ')} → ${bestLocation}/`
     };
-  }));
+  }
 
+  if (novelEntities.length > 0) {
+    // All entities are novel - suggest creating new location
+    const primaryEntity = novelEntities[0][0];
+    return {
+      path: obj.key.replace(r2Prefix, ''),
+      title,
+      entities: entityAnalysis,
+      suggested_action: 'create_location',
+      options: inferNewLocations(primaryEntity, content),
+      confidence: 0.3,
+      requires_input: true,
+      reasoning: `Novel entity "${primaryEntity}" - no existing content found. User input needed.`
+    };
+  }
+
+  // Only tangential matches - low confidence, keep in inbox
   return {
-    content: [{
-      type: "text",
-      text: JSON.stringify({
-        items: analysis,
-        rules_loaded: !!rulesObj,
-        entity_resolution: "AI Search multi-query"
-      }, null, 2)
-    }]
+    path: obj.key.replace(r2Prefix, ''),
+    title,
+    entities: entityAnalysis,
+    suggested_action: 'keep',
+    destination: null,
+    confidence: 0.25,
+    reasoning: 'Only tangential mentions found - keeping in inbox for manual review'
   };
-});
+}
+
+// Infer possible locations for a novel entity based on content type
+function inferNewLocations(entity: string, content: string): Array<{path: string, reasoning: string}> {
+  const slug = sanitizeFilename(entity);
+  const options = [];
+
+  // Check content type heuristics
+  if (content.match(/## (Ingredients|Instructions)/i)) {
+    options.push({ path: `recipes/${slug}.md`, reasoning: 'Recipe format detected' });
+  }
+  if (content.match(/## (Attendees|Agenda|Action Items)/i)) {
+    options.push({ path: `work/meetings/${slug}.md`, reasoning: 'Meeting notes format' });
+  }
+  if (content.match(/(birthday|party|wedding|anniversary)/i)) {
+    options.push({ path: `family/events/${slug}.md`, reasoning: 'Family event detected' });
+  }
+
+  // Default: create entity folder
+  options.push({ path: `people/${slug}/index.md`, reasoning: 'New person - create dedicated folder' });
+  options.push({ path: `notes/${slug}.md`, reasoning: 'General notes location' });
+
+  return options.slice(0, 3);
+}
 ```
 
 This implementation:
-1. Extracts entities from each inbox item (names, projects, topics)
-2. Searches the brain for each entity to find where related content lives
-3. Uses path voting to determine the most likely destination
-4. Returns confidence based on how many entities point to the same location
+1. **Distinguishes primary vs tangential content** — Only considers files *about* an entity, not files that merely mention it
+2. **Handles novel entities explicitly** — Returns `create_location` action with suggested paths when no primary content exists
+3. **Confidence reflects match quality** — High confidence only when primary content clusters in one location
+4. **Surfaces uncertainty** — Returns `requires_input: true` when user decision is needed
 
 ## Related
 
