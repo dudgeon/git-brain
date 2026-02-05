@@ -29,18 +29,54 @@ Based on observed usage patterns, inbox processing typically involves:
 4. **Filing** — Move items from `inbox/` to their destination folders
 5. **Cross-referencing** — Update indices, link to related content, update summaries
 
-### The Token Efficiency Challenge
+### The Core Challenge: Entity Resolution Without Full Context
 
-A naive implementation would:
-1. Fetch all inbox items (full content)
-2. Fetch all processing rules
-3. Fetch relevant context from the brain (existing folders, related content)
-4. Send everything to Claude for analysis
-5. Execute the resulting actions
+The hardest part of inbox processing isn't moving files — it's knowing *where things belong*. When a note mentions "Owen's swim meet schedule", smart processing should recognize:
+- Owen is a person (a kid, specifically)
+- There's existing content about Owen at `family/kids/owen/`
+- Swim-related content lives at `family/activities/swim/`
+- The note should probably go to `family/kids/owen/swim/` or similar
 
-For a brain with 500 files and 20 inbox items, this could easily exceed 100k tokens per processing run — expensive and slow.
+This requires **entity resolution** — matching mentions in new content to existing structures in the brain.
 
-The solution requires selective context loading: summarize inbox items, load rules once, use AI Search for relevant context retrieval rather than full repo traversal.
+**Naive approaches fail:**
+
+1. **Load entire brain** — For a 500-file brain, this could exceed 100k tokens just for context. Expensive, slow, doesn't scale.
+
+2. **Maintain an entity index** — Keep a mapping like `Owen → family/kids/owen/`. Brittle: requires updates whenever structure changes, entities are added, or content moves. Gets stale.
+
+3. **Folder listing + heuristics** — List folders, guess based on names. Misses semantic relationships (doesn't know Owen is a kid or that swim content exists).
+
+### The Key Insight: AI Search IS the Entity Index
+
+The brain's own content, indexed by AI Search, serves as a self-maintaining entity/location index:
+
+```
+Search: "Owen"
+Results:
+  - family/kids/owen/report-card-2025.md (score: 0.92)
+  - family/kids/owen/school-schedule.md (score: 0.89)
+  - inbox/birthday-party-notes.md (score: 0.71)
+
+Search: "swim meet"
+Results:
+  - family/activities/swim/2025-schedule.md (score: 0.94)
+  - family/kids/owen/swim-team-signup.md (score: 0.87)
+```
+
+From these results, Claude can infer:
+- Owen's content lives under `family/kids/owen/`
+- Swim content clusters at `family/activities/swim/` and intersects with Owen
+- A note about "Owen's swim meet" likely belongs in `family/kids/owen/` (entity-primary) or `family/activities/swim/` (topic-primary), depending on user preference
+
+**Why this works:**
+- **Self-maintaining** — No separate index to update. Content changes → search results change automatically.
+- **Scales** — Search is O(1), not O(files). Works the same for 50 files or 5,000.
+- **Discovers structure implicitly** — File paths in search results reveal the brain's organization.
+- **Semantic, not syntactic** — Finds "Owen" even when the note says "my son" if existing content establishes that relationship.
+- **Handles ambiguity** — Multiple results let Claude (or the user) choose between valid options.
+
+This is the foundational insight: **use AI Search not just for content retrieval, but for entity resolution and structure discovery.**
 
 ### User Customization
 
@@ -228,13 +264,50 @@ If `_brain_config/inbox_rules.md` doesn't exist, the system uses sensible defaul
 - Present all suggestions for user approval (no auto-execute)
 - Lower confidence threshold (0.5) when no rules defined
 
-### Token Efficiency Strategies
+### Entity Resolution via AI Search
 
-1. **Summarize, don't load** — `inbox_analyze` returns item summaries (title + excerpt), not full content
-2. **Rules loaded once** — Rules document fetched once per analysis, not per item
-3. **AI Search for context** — Use semantic search to find related content instead of traversing folders
-4. **Batch execution** — Single `inbox_execute` call for all approved actions
-5. **Structured output** — JSON responses minimize parsing overhead
+The `inbox_analyze` tool uses AI Search strategically for entity resolution:
+
+1. **Extract entities from inbox item** — Parse title and content for named entities (people, projects, topics, locations)
+2. **Multi-query search** — For each entity, search the brain to find where related content lives
+3. **Path analysis** — Extract folder paths from search results to understand brain structure
+4. **Confidence scoring** — Higher confidence when multiple searches point to the same location
+
+**Example flow for "Owen's swim meet schedule":**
+
+```
+Entities extracted: ["Owen", "swim meet", "schedule"]
+
+Search "Owen" → family/kids/owen/report-card.md, family/kids/owen/school.md
+Search "swim meet" → family/activities/swim/2025-schedule.md
+Search "schedule" → (too generic, skip)
+
+Path analysis:
+  - Owen content: family/kids/owen/ (2 hits)
+  - Swim content: family/activities/swim/ (1 hit)
+  - Intersection: family/kids/owen/ contains swim-related file
+
+Suggested destination: family/kids/owen/swim-schedule-spring-2026.md
+Confidence: 0.85
+Reasoning: "Owen" entity strongly associated with family/kids/owen/;
+           swim content exists there; follows existing naming pattern
+```
+
+This approach requires only 2-3 AI Search calls per inbox item (one per significant entity), returning ~3 results each. Total context for classification: ~500 tokens per item instead of loading the entire brain.
+
+### Token Efficiency Summary
+
+| Approach | Tokens per 20-item inbox |
+|----------|-------------------------|
+| Load entire brain (500 files) | ~100,000+ |
+| Entity index + full item content | ~15,000 |
+| **AI Search entity resolution** | ~2,000-3,000 |
+
+The key savings:
+1. **Search results, not full files** — AI Search returns paths + snippets, not full documents
+2. **Entity-targeted queries** — 2-3 searches per item, not exhaustive traversal
+3. **Structured output** — Classification decision returned as JSON, not prose
+4. **Rules loaded once** — Processing rules fetched once, applied to all items
 
 ### MCP Apps UI (Future)
 
@@ -262,17 +335,51 @@ This is deferred until the core tools are proven.
 
 ### Open Questions
 
-1. **Rule format** — Should rules be pure markdown (flexible but ambiguous) or structured YAML/JSON (precise but less readable)?
-2. **Confidence calibration** — How do we tune confidence scores without labeled training data?
-3. **Conflict resolution** — What happens when multiple rules match? Priority order? User prompt?
-4. **Undo support** — Should `inbox_execute` support rollback? (Complex with GitHub sync involved)
+1. **Rule interpretation: server vs client** — Should the server interpret natural language rules (requires embedded LLM), or should it return rules + entity data for the client Claude to interpret? Client interpretation is simpler but adds tokens; server interpretation requires Claude API access.
+
+2. **Entity extraction quality** — Simple regex extraction works for obvious entities ("Owen", "Project X") but misses implicit references ("my son", "the main project"). Workers AI entity extraction (`@cf/...`) could improve this but adds latency/cost.
+
+3. **Rule format** — Should rules be pure markdown (flexible but ambiguous) or structured YAML/JSON (precise but less readable)? Markdown feels more natural for users but may cause interpretation inconsistencies.
+
+4. **Confidence calibration** — How do we tune confidence scores without labeled training data? Could track user overrides over time.
+
+5. **Conflict resolution** — What happens when multiple rules match? Priority order? User prompt? Current design surfaces all options; user/Claude decides.
+
+6. **Cross-entity relationships** — AI Search finds entities independently. How do we handle relationships ("Owen's swim meet" = Owen + swim, should go where Owen + swim intersect)? Current voting heuristic is simple but may miss nuance.
 
 ## Implementation Sketch
 
 ```typescript
+// Entity extraction (simple heuristic - could use Workers AI for better extraction)
+function extractEntities(text: string): string[] {
+  // Extract capitalized phrases, quoted terms, hashtags
+  const capitalized = text.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g) || [];
+  const hashtags = text.match(/#\w+/g)?.map(t => t.slice(1)) || [];
+  // Filter out common words, dedupe
+  return [...new Set([...capitalized, ...hashtags])]
+    .filter(e => !['The', 'This', 'That', 'Monday', 'Tuesday'].includes(e))
+    .slice(0, 5); // Limit to top 5 entities
+}
+
+// Search for entity and extract path patterns
+async function resolveEntity(env: Env, prefix: string, entity: string): Promise<string[]> {
+  const results = await env.AI.autorag({ name: AUTORAG_NAME }).search(entity, {
+    filters: { folder: { $startsWith: prefix } },
+    rewrite_query: false,
+    max_num_results: 3
+  });
+
+  // Extract parent folders from result paths
+  return results.map(r => {
+    const path = r.filename.replace(prefix, '');
+    const parts = path.split('/');
+    parts.pop(); // Remove filename
+    return parts.join('/');
+  }).filter(Boolean);
+}
+
 // inbox_analyze tool
 server.tool("inbox_analyze", "Analyze inbox items and suggest processing actions", {}, async () => {
-  const installation = await getInstallation(env, installationUuid);
   const r2Prefix = `brains/${installationUuid}/`;
 
   // 1. List inbox items
@@ -282,33 +389,63 @@ server.tool("inbox_analyze", "Analyze inbox items and suggest processing actions
   const rulesObj = await env.R2.get(`${r2Prefix}_brain_config/inbox_rules.md`);
   const rules = rulesObj ? await rulesObj.text() : DEFAULT_INBOX_RULES;
 
-  // 3. For each item, generate summary and suggested action
+  // 3. For each item: extract entities, resolve via search, suggest destination
   const analysis = await Promise.all(inboxItems.objects.map(async (obj) => {
-    const content = await env.R2.get(obj.key);
-    const text = await content.text();
-    const summary = extractSummary(text); // title + first 100 chars
+    const content = await (await env.R2.get(obj.key))!.text();
+    const title = extractTitle(content);
+    const entities = extractEntities(content);
 
-    // Use AI Search to find similar content for classification hints
-    const similar = await env.AI.autorag({ name: AUTORAG_NAME }).search(summary, {
-      filters: { folder: { $startsWith: r2Prefix } },
-      rewrite_query: false,
-      max_num_results: 3
+    // Resolve each entity to folder paths via AI Search
+    const entityPaths: Record<string, string[]> = {};
+    for (const entity of entities) {
+      entityPaths[entity] = await resolveEntity(env, r2Prefix, entity);
+    }
+
+    // Find most common path across entities (simple voting)
+    const pathCounts: Record<string, number> = {};
+    Object.values(entityPaths).flat().forEach(p => {
+      pathCounts[p] = (pathCounts[p] || 0) + 1;
     });
+    const topPath = Object.entries(pathCounts)
+      .sort((a, b) => b[1] - a[1])[0];
+
+    const suggestedDest = topPath
+      ? `${topPath[0]}/${sanitizeFilename(title)}.md`
+      : null;
+    const confidence = topPath ? Math.min(0.5 + topPath[1] * 0.15, 0.95) : 0.3;
 
     return {
       path: obj.key.replace(r2Prefix, ''),
-      summary,
-      similar_to: similar.map(s => s.filename),
-      // Suggested action computed by analyzing rules + similarity
-      suggested_action: null, // Filled by rule matching logic
-      confidence: null,
-      reasoning: null
+      title,
+      entities,
+      entity_locations: entityPaths,
+      suggested_action: suggestedDest ? 'move' : 'keep',
+      destination: suggestedDest,
+      confidence,
+      reasoning: suggestedDest
+        ? `Entities ${Object.keys(entityPaths).join(', ')} found in ${topPath[0]}/`
+        : 'No strong entity matches found'
     };
   }));
 
-  return { content: [{ type: "text", text: JSON.stringify({ items: analysis, rules_applied: [] }) }] };
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        items: analysis,
+        rules_loaded: !!rulesObj,
+        entity_resolution: "AI Search multi-query"
+      }, null, 2)
+    }]
+  };
 });
 ```
+
+This implementation:
+1. Extracts entities from each inbox item (names, projects, topics)
+2. Searches the brain for each entity to find where related content lives
+3. Uses path voting to determine the most likely destination
+4. Returns confidence based on how many entities point to the same location
 
 ## Related
 
