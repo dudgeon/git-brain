@@ -1,6 +1,6 @@
 # Product Backlog
 
-**Last updated:** 2026-02-03
+**Last updated:** 2026-02-07
 
 ---
 
@@ -59,6 +59,44 @@ Fixed: `syncChangedFiles` now regenerates `_brain_summary.json` after any file c
 ---
 
 ## Low — Polish
+
+### GitHub URL parsing in `get_document`
+
+The `search_brain` tool returns results with full GitHub URLs (e.g., `https://github.com/owner/repo/blob/main/path/to/file.md`) via the `getSourceUrl()` helper (src/index.ts:288-295). However, `get_document` only accepts file paths (src/index.ts:387), not URLs.
+
+**Current workaround:** Users must manually extract the path portion from the GitHub URL.
+
+**Fix:** Add URL parsing to `get_document`:
+- Accept both full GitHub URLs and file paths in the `path` parameter
+- Parse URLs using regex: `/\/blob\/[^/]+\/(.+)$/` to extract the path after `/blob/{branch}/`
+- Fall back to treating input as a direct path if it doesn't match the URL pattern
+
+**Implementation location:** `registerGetDocument()` in src/index.ts:382-432
+
+### Batch document retrieval
+
+`get_document` currently accepts only a single `path` string (src/index.ts:387). When search returns multiple relevant chunks from different files, users need multiple tool calls to retrieve all source documents.
+
+**Fix:** Support batch retrieval:
+- Change `path` parameter type to `z.union([z.string(), z.array(z.string())])`
+- If array provided, fetch all documents in parallel with `Promise.all()`
+- Return array of results with per-document success/error status
+- Add reasonable limits (e.g., max 10 documents per call) to prevent abuse
+
+**Alternative:** Create a separate `retrieve_documents` tool for batch operations, keeping `get_document` for single files.
+
+### Retrieval guidance in `search_brain` description
+
+The `search_brain` tool description (src/index.ts:244-283) explains when to use search and what content is available, but doesn't mention that `get_document` exists or when to use it for retrieving full document content.
+
+**Current behavior:** Search returns text chunks with GitHub source links, but doesn't guide Claude to retrieve the full document when a chunk is interesting but incomplete.
+
+**Fix:** Add one sentence to the end of `buildSearchDescription()`:
+```typescript
+description += `\n\nReturns relevant passages with source document links. For complete document content, use 'get_document' with the filename from search results.`;
+```
+
+This helps Claude understand the search → retrieve workflow and when to fetch full context.
 
 ### ScopedR2 / ScopedAISearch wrappers
 
