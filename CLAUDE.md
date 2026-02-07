@@ -87,9 +87,13 @@ git-brain/
 ├── package.json
 ├── tsconfig.json
 ├── test-user-mcp.mjs      # MCP endpoint test (authenticated, production)
+├── .github/
+│   └── workflows/
+│       ├── typecheck.yml  # PR check: runs npm run typecheck
+│       └── deploy.yml     # Deploy on push to main
 ├── docs/
 │   ├── BACKLOG.md             # Product backlog (prioritized)
-│   └── adr/                   # Architecture Decision Records
+│   └── adr/                   # Architecture Decision Records (001-005)
 ├── src/
 │   ├── index.ts           # Main Worker, MCP server, HTTP routes
 │   ├── github.ts          # GitHub API helpers (auth, fetch files)
@@ -254,6 +258,37 @@ npm run deploy
 # Test MCP connection (REQUIRED after changes)
 node test-user-mcp.mjs
 ```
+
+## CI/CD Deployment
+
+Changes deploy automatically via GitHub Actions. See [ADR-005](docs/adr/005-ci-cd-deployment.md) for the full decision.
+
+### Workflow
+
+1. **Push to feature branch** (e.g., `claude/fix-something-ABC123`)
+2. **Create PR with auto-merge**:
+   ```bash
+   gh pr create --fill && gh pr merge --auto --squash
+   ```
+3. **GitHub Actions runs typecheck** on the PR
+4. **PR auto-merges** when checks pass
+5. **Push to main triggers deploy** to Cloudflare
+
+From Claude mobile or any environment without Cloudflare credentials, this is the preferred workflow. Claude can push and create the PR, then walk away — changes deploy automatically if typecheck passes.
+
+### Manual Deploy (when you have credentials)
+
+```bash
+npm run deploy
+```
+
+This still works for local development or when you need to bypass the PR flow.
+
+### Rollback
+
+If a bad deploy happens:
+1. **Git revert**: `git revert HEAD && git push` → triggers new deploy with previous code
+2. **Cloudflare dashboard**: Deployments → select previous version → Rollback
 
 ## Testing Requirements
 
