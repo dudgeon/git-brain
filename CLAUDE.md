@@ -35,6 +35,13 @@ Instead, clearly state what you're blocked on and what you need from the user.
 
 **Node.js version:** Wrangler requires Node.js v20+. Always run `source ~/.nvm/nvm.sh && nvm use 20` before `npm run deploy` or `npm run typecheck` commands.
 
+**Check implementation before documenting:** When asked to write PRDs, feature specs, or design docs, ALWAYS read the current implementation first. Do not make assumptions about architecture, existing features, or code structure. Read `src/index.ts`, check the backlog, and verify actual behavior before proposing changes. A feature you're asked to design may already be implemented, or the architecture may have evolved significantly. Writing documentation based on assumptions wastes time and creates confusion when branches diverge.
+
+**Branch hygiene and divergence:** When working on a branch that has diverged from main (check with `git log --oneline <common-ancestor>..origin/main`), assess whether the work is still relevant:
+- If main has evolved significantly (architecture changes, rebrand, major refactors), consider abandoning the branch and extracting useful ideas to the backlog instead of forcing a merge
+- Don't create PRDs or extensive documentation on stale branches — they become obsolete quickly
+- When in doubt, ask the user for decisions about branch disposition (abandon, salvage, or merge)
+
 ## Architecture
 
 ```
