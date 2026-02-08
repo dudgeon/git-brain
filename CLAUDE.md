@@ -42,6 +42,10 @@ Instead, clearly state what you're blocked on and what you need from the user.
 - Don't create PRDs or extensive documentation on stale branches — they become obsolete quickly
 - When in doubt, ask the user for decisions about branch disposition (abandon, salvage, or merge)
 
+**Sync before committing:** Always `git fetch && git status` before committing to check for remote changes. If behind, stash local changes, pull, then pop. This repo may have concurrent sessions from different Claude instances.
+
+**Design tool metadata for semantic understanding:** When writing MCP tool descriptions, focus on *why* Claude should use the tool (semantic categories), not just trigger phrases. Good: "Use for information about the user unlikely to be in training data or public sources." Bad: "Use when user says 'search the brain'." Semantic descriptions generalize; phrase matching is brittle.
+
 ## Architecture
 
 ```
