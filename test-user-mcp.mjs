@@ -36,6 +36,11 @@ async function main() {
   console.log("\n=== Available Prompts (Slash Commands) ===");
   console.log(JSON.stringify(prompts, null, 2));
 
+  // Test about tool
+  const aboutResult = await client.callTool({ name: "about", arguments: {} });
+  console.log("\n=== About Tool Output ===");
+  console.log(aboutResult.content[0].text);
+
   await client.close();
 }
 

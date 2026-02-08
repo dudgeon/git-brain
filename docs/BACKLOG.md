@@ -114,10 +114,6 @@ Console logging is basic. Would benefit from structured JSON logging, request ID
 
 Error responses mix plain text and JSON. Standardize on `{ "error": "code", "message": "Human readable" }` with correct HTTP status codes.
 
-### Automated tests
-
-No automated tests exist. The manual test script (`test-user-mcp.mjs`) requires a live deployment and valid bearer token. Would benefit from unit tests for OAuth, integration tests for webhooks, and E2E tests for MCP tools.
-
 ### UUID-free MCP URL
 
 Users currently need `https://brainstem.cc/mcp/{uuid}` — the UUID is ugly and requires manual copy-paste. The server should resolve the user's installation from their bearer token so Claude.ai users can just give `https://brainstem.cc/mcp`.
@@ -134,6 +130,8 @@ The setup page is minimal. Could add progress indicators, repo selection (for mu
 
 Items completed in v4.4+:
 
+- **Tool metadata & prompts (v4.7):** Improved `search_brain` tool description to encourage automatic use — removed "private" framing that caused Claude to hesitate, added semantic triggers (info unlikely in training data, augmenting memory), added common phrase triggers. Added MCP prompts (`brain_search`, `brain_inbox`) as explicit tool invocation fallbacks. Updated `about` tool to document prompts and reinforce tool usage. Server advertises `prompts` capability; Claude Desktop UI support for prompts is pending (prompts work via explicit instruction).
+- **Unit test coverage (v4.6):** Added 47 unit tests using Vitest covering extractable business logic: webhook signature verification (HMAC-SHA256, security-critical), file filtering (extension/sensitive file/directory exclusion logic), webhook payload parsing (changed/removed file extraction, deduplication), and title sanitization (inbox filename normalization). Pure functions extracted to `src/utils.ts` for testability (no Workers dependencies). Establishes regression safety net for ADR-005 refactor (ChatGPT App dual distribution). Tests run via `npm test` and `npm run test:watch`.
 - **Tool metadata enhancements (v4.5):** Updated `brain_inbox` and `brain_inbox_save` tool descriptions to guide clients on which tool to use. `brain_inbox_save` is now callable by models directly (removed `visibility: ["app"]`) with optional `filePath` parameter and auto-generation. `brain_inbox` description clarifies it's for UI hosts only. Non-UI hosts and AI agents should use `brain_inbox_save` instead for direct saves.
 - **File deletion sync:** `extractChangedFiles` now returns both changed and removed files. `syncChangedFiles` deletes removed files from R2 and triggers AI Search reindex. Brain summary is regenerated after deletions. Also handles file moves (git treats moves as remove + add). AI Search takes 2-3 minutes to process deletion from its vector index — this is expected Cloudflare behavior, not a bug.
 - **Initial sync subrequest limit fix:** `syncRepo` previously fetched each file individually via the Git Blobs API (1 external subrequest per file), hitting the Workers free-plan 50-subrequest limit. Repos with >50 files silently stopped syncing partway through (e.g., 51/136 files). Replaced with GitHub Tarball API approach — downloads the entire repo as a gzip tarball in 1 subrequest, extracts and filters in-memory, then writes to R2 (internal bindings, no limit).

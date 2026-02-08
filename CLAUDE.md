@@ -25,7 +25,7 @@ Instead, clearly state what you're blocked on and what you need from the user.
 
 **Keep test credentials current:** When installation UUIDs or bearer tokens change (e.g., after a reinstall), immediately update `test-user-mcp.mjs` and any other test scripts. Being able to test the MCP server directly is critical — never leave stale credentials as a known issue.
 
-**Verify before asking the user to validate:** Always test functionality yourself before reporting it as done or asking the user to check. This means: hit the prod MCP server directly (`node test-user-mcp.mjs`, `curl` against live endpoints), check debug/status endpoints to confirm state changes, and use Chrome integration (`--chrome` flag or `/chrome` command) to visually inspect web page changes (success pages, setup pages, etc.). The user's validation should be a second look, not the primary check. When testing features end-to-end (e.g., webhook-triggered sync, file deletion), run the verification scripts yourself — don't ask the user to run them or report back results.
+**Verify before asking the user to validate:** Always test functionality yourself before reporting it as done or asking the user to check. This means: run unit tests (`npm test`), hit the prod MCP server directly (`node test-user-mcp.mjs`, `curl` against live endpoints), check debug/status endpoints to confirm state changes, and use Chrome integration (`--chrome` flag or `/chrome` command) to visually inspect web page changes (success pages, setup pages, etc.). The user's validation should be a second look, not the primary check. When testing features end-to-end (e.g., webhook-triggered sync, file deletion), run the verification scripts yourself — don't ask the user to run them or report back results.
 
 **Never run destructive operations against production data:** Debug endpoints like `/debug/delete` and `/debug/sync` have irreversible side effects (purging R2 files, deleting D1 records, revoking sessions). Before calling any write/POST debug endpoint, re-read the endpoint's documentation in this file to understand exactly what it does. If you need to clean up R2 without destroying the installation, write a targeted script — don't repurpose a full-deletion endpoint. When in doubt, ask the user before executing.
 
@@ -93,13 +93,19 @@ git-brain/
 ├── wrangler.toml          # Cloudflare Worker configuration
 ├── package.json
 ├── tsconfig.json
+├── vitest.config.ts       # Vitest test configuration
 ├── test-user-mcp.mjs      # MCP endpoint test (authenticated, production)
+├── test-mocks/            # Mock assets for unit tests
+│   └── empty-asset.js     # Empty string exports for binary/HTML imports
 ├── docs/
 │   ├── BACKLOG.md             # Product backlog (prioritized)
 │   └── adr/                   # Architecture Decision Records
 ├── src/
 │   ├── index.ts           # Main Worker, MCP server, HTTP routes
 │   ├── github.ts          # GitHub API helpers (auth, fetch files)
+│   ├── utils.ts           # Pure utility functions (extractChangedFiles, sanitizeInboxTitle)
+│   ├── github.test.ts     # Unit tests for GitHub helpers (webhook signature, file filtering)
+│   ├── index.test.ts      # Unit tests for business logic (webhook parsing, title sanitization)
 │   └── html.d.ts          # Type declarations for .html imports
 └── ui/
     ├── brain-inbox/       # Brain Inbox Composer app source
@@ -218,6 +224,25 @@ In non-UI hosts, `brain_inbox` returns the draft text but does NOT save. Use `br
 
 See `docs/adr/` for architecture decisions (ADR-004: inbox composer, ADR-006: explorer).
 
+### MCP Prompts (Slash Commands)
+
+The server registers prompts as explicit tool invocation fallbacks:
+
+| Prompt | Description | Arguments |
+|--------|-------------|-----------|
+| `brain_search` | Explicitly search the knowledge base | `query` |
+| `brain_inbox` | Add a quick note to the inbox | `title`, `content` |
+
+**Purpose:** MCP prompts are designed to be user-invocable slash commands (e.g., `/brain_search family movies`). When invoked, they return a message that explicitly instructs Claude to use the corresponding tool.
+
+**Current limitation:** Claude Desktop doesn't currently render MCP prompts in its UI, but the prompts are correctly advertised via server capabilities. Users can manually tell Claude to "use the brain_search prompt" as a fallback if automatic tool selection fails.
+
+**Tool metadata design:** The `search_brain` tool description is optimized to encourage automatic use:
+- Clarifies Claude has been granted access to search on the user's behalf
+- Lists semantic triggers (info unlikely in training data, augmenting memory)
+- Includes common phrases ("the brain", "my brain", "brainstem")
+- The `about` tool output also documents when to use `search_brain`
+
 ## AI Search Reindex API
 
 **Correct endpoint** (discovered via Cloudflare dashboard network inspection):
@@ -255,6 +280,12 @@ npm run dev
 # Type check
 npm run typecheck
 
+# Run unit tests
+npm test
+
+# Run unit tests in watch mode
+npm run test:watch
+
 # Deploy to Cloudflare (builds UI first)
 npm run deploy
 
@@ -266,9 +297,10 @@ node test-user-mcp.mjs
 
 **CRITICAL**: After making any changes to the MCP server, Claude MUST:
 
-1. Run `npm run typecheck` to verify TypeScript compiles
-2. Run `npm run deploy` to deploy changes
-3. Run `node test-user-mcp.mjs` to verify the MCP server responds correctly (requires valid bearer token)
+1. Run `npm test` to verify unit tests pass
+2. Run `npm run typecheck` to verify TypeScript compiles
+3. Run `npm run deploy` to deploy changes
+4. Run `node test-user-mcp.mjs` to verify the MCP server responds correctly (requires valid bearer token)
 
 **Do NOT rely on the user to test MCP functionality.** Always verify the deployment works before reporting success.
 
@@ -500,6 +532,24 @@ The MCP server can load a `_brain_summary.json` file from R2 to enrich the `sear
 The summary is explicitly framed as **non-exhaustive** in the tool description to prevent Claude from thinking "topic X isn't in the summary, so I shouldn't search."
 
 ## Current Status
+
+**v4.7 — Tool Metadata & Prompts (Discoverability Improvements):**
+- ✅ Improved `search_brain` tool description to encourage automatic use
+- ✅ Removed "private" framing that caused Claude to hesitate
+- ✅ Added semantic triggers: info unlikely in training data, augmenting memory
+- ✅ Added MCP prompts: `brain_search`, `brain_inbox` as explicit invocation fallbacks
+- ✅ Updated `about` tool to document prompts and reinforce tool usage guidance
+- ✅ Server correctly advertises `prompts` capability (Claude Desktop UI support pending)
+
+**v4.6 — Unit Test Coverage (Pre-Refactor Baseline):**
+- ✅ 47 unit tests covering extractable business logic (Vitest framework)
+- ✅ Webhook signature verification tests (security-critical HMAC validation)
+- ✅ File filtering tests (extension, sensitive file, directory exclusion logic)
+- ✅ Webhook payload parsing tests (changed/removed file extraction, deduplication)
+- ✅ Title sanitization tests (inbox filename normalization)
+- ✅ Pure functions extracted to `src/utils.ts` for testability (no Workers dependencies)
+- ✅ Test suite runs in CI-friendly mode (`npm test`) and watch mode (`npm run test:watch`)
+- ✅ Establishes regression safety net for ADR-005 refactor (ChatGPT App dual distribution)
 
 **v4.5 — MCP Apps Interactive UI:**
 - ✅ Brain Inbox Composer: interactive preview-before-save with 5s countdown, editing, cancel

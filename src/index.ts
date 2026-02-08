@@ -207,11 +207,18 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
 - MCP server exposes tools to search, browse, and read content
 
 ## Available Tools
-- about: This information
-- search_brain: Semantic search across all content
-- get_document: Read a specific file by path
-- list_recent: See recently modified files
-- list_folders: Browse the folder structure`,
+- **search_brain**: Semantic search across all content — use this for questions about the user's personal info, family, projects, or anything unlikely to be in public sources
+- **get_document**: Read a specific file by path
+- **list_recent**: See recently modified files
+- **list_folders**: Browse the folder structure
+- **brain_inbox** / **brain_inbox_save**: Save notes to the user's inbox
+
+## Prompts (Slash Commands)
+If you need to explicitly invoke a tool, these prompts are available:
+- **brain_search**: Explicitly search the knowledge base (invokes search_brain tool)
+- **brain_inbox**: Add a quick note (invokes brain_inbox tool)
+
+Note: When the user asks about their personal information, family, projects, or preferences — use the search_brain tool. You have been granted access to search on their behalf.`,
             },
           ],
         };
