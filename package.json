@@ -27,6 +27,7 @@
   "license": "ISC",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250110.0",
+    "@types/turndown": "^5.0.6",
     "typescript": "^5.7.2",
     "vite": "^7.3.1",
     "vite-plugin-singlefile": "^2.3.0",
@@ -39,6 +40,8 @@
     "@octokit/auth-app": "^8.1.2",
     "agents": "^0.3.6",
     "hono": "^4.7.11",
+    "postal-mime": "^2.7.3",
+    "turndown": "^7.2.2",
     "zod": "^4.3.5"
   }
 }

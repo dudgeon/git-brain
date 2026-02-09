@@ -61,3 +61,91 @@ export function sanitizeInboxTitle(title: string): string {
     .replace(/^-|-$/g, "")
     .slice(0, 80);
 }
+
+/**
+ * Alias validation result
+ */
+export interface AliasValidation {
+  valid: boolean;
+  error?: string;
+}
+
+const RESERVED_ALIASES = new Set([
+  "brain", "admin", "support", "help", "info", "postmaster", "abuse",
+  "noreply", "no-reply", "webmaster", "security", "root", "hostmaster",
+  "mailer-daemon", "www", "mail", "ftp", "api", "app", "dashboard",
+  "status", "billing", "system", "test", "dev", "staging",
+]);
+
+/**
+ * Validate a vanity alias for use as an email local-part
+ * Rules: 3-30 chars, lowercase alphanumeric + hyphens + dots,
+ * must start/end with alphanumeric, no consecutive dots/hyphens
+ */
+export function validateAlias(alias: string): AliasValidation {
+  if (alias.length < 3) return { valid: false, error: "Alias must be at least 3 characters" };
+  if (alias.length > 30) return { valid: false, error: "Alias must be at most 30 characters" };
+  if (alias !== alias.toLowerCase()) return { valid: false, error: "Alias must be lowercase" };
+  if (!/^[a-z0-9]/.test(alias)) return { valid: false, error: "Alias must start with a letter or number" };
+  if (!/[a-z0-9]$/.test(alias)) return { valid: false, error: "Alias must end with a letter or number" };
+  if (!/^[a-z0-9.-]+$/.test(alias)) return { valid: false, error: "Alias can only contain lowercase letters, numbers, dots, or hyphens" };
+  if (/[.-]{2}/.test(alias)) return { valid: false, error: "Alias must not contain consecutive dots or hyphens" };
+  if (RESERVED_ALIASES.has(alias)) return { valid: false, error: "This alias is reserved" };
+  return { valid: true };
+}
+
+/**
+ * Generate a 6-character confirmation code for email verification
+ * Uses uppercase alphanumeric chars, excluding confusable characters (I, O, 0, 1)
+ */
+export function generateConfirmationCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const randomValues = new Uint8Array(6);
+  crypto.getRandomValues(randomValues);
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars[randomValues[i] % chars.length];
+  }
+  return code;
+}
+
+/**
+ * Extract the bare email address from a potentially formatted address
+ * e.g., '"Dan Smith" <dan@gmail.com>' → 'dan@gmail.com'
+ */
+export function normalizeEmailAddress(address: string): string {
+  const match = address.match(/<([^>]+)>/);
+  return (match ? match[1] : address).trim().toLowerCase();
+}
+
+/**
+ * Resolve an installation UUID from a brainstem email address
+ * Returns the UUID if it's a sub-address (brain+{uuid}@brainstem.cc),
+ * or the local-part for alias lookup
+ */
+export function parseEmailRecipient(toAddress: string): { type: "uuid"; uuid: string } | { type: "alias"; localPart: string } | null {
+  const match = toAddress.match(/^([^@]+)@brainstem\.cc$/i);
+  if (!match) return null;
+  const localPart = match[1].toLowerCase();
+
+  // Sub-address format: brain+{uuid}
+  const subAddrMatch = localPart.match(/^brain\+([a-f0-9-]{36})$/);
+  if (subAddrMatch) return { type: "uuid", uuid: subAddrMatch[1] };
+
+  return { type: "alias", localPart };
+}
+
+/**
+ * Build YAML frontmatter for an email-sourced inbox note
+ */
+export function buildEmailFrontmatter(from: string, date: string | undefined, subject: string | undefined): string {
+  const safeSub = (subject || "(no subject)").replace(/"/g, '\\"');
+  return [
+    "---",
+    "source: email",
+    `from: ${from}`,
+    `date: ${date || new Date().toISOString()}`,
+    `subject: "${safeSub}"`,
+    "---",
+  ].join("\n");
+}

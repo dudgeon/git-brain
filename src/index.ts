@@ -16,7 +16,9 @@ import {
   verifyWebhookSignature,
   type GitHubEnv,
 } from "./github";
-import { extractChangedFiles, sanitizeInboxTitle } from "./utils";
+import { extractChangedFiles, sanitizeInboxTitle, validateAlias, generateConfirmationCode } from "./utils";
+import { triggerAISearchReindex } from "./cloudflare";
+import { saveToInbox, ensureEmailTables } from "./inbox";
 import logoPng from "../site/brainstem_logo.png";
 import diagramPng from "../site/brainstem-diagram.png";
 import brainInboxHtml from "../ui/dist/index.html";
@@ -121,18 +123,32 @@ export class HomeBrainMCP extends McpAgent<Env> {
 
   /**
    * Get the R2 prefix for this DO instance
-   * Checks multiple sources: DO name, or stored state
+   * Checks multiple sources: DO name, stored state, or persistent storage
    */
-  private initR2Prefix(): void {
+  private async initR2Prefix(): Promise<void> {
     try {
       // Try to get the DO name - if created via idFromName(uuid), this will be the uuid
       const doName = (this.ctx as { id?: { name?: string } })?.id?.name;
       if (doName && /^[a-f0-9-]{36}$/.test(doName)) {
         this.r2Prefix = `brains/${doName}/`;
+        return;
       }
     } catch {
-      // Legacy mode - no prefix
-      this.r2Prefix = "";
+      // Fall through to storage check
+    }
+
+    // Fall back to persistent storage (survives hibernation/reconnection)
+    try {
+      const stored = await this.ctx.storage.get<string>("installationId");
+      if (stored) {
+        this.r2Prefix = `brains/${stored}/`;
+      }
+      const storedRepo = await this.ctx.storage.get<string>("repoFullName");
+      if (storedRepo) {
+        this.repoFullName = storedRepo;
+      }
+    } catch {
+      // No stored state
     }
   }
 
@@ -144,16 +160,18 @@ export class HomeBrainMCP extends McpAgent<Env> {
     const installationId = url.searchParams.get("installation");
     const repo = url.searchParams.get("repo");
 
-    // If installation ID provided, set prefix before processing
+    // If installation ID provided, set prefix and persist to storage
     if (installationId && /^[a-f0-9-]{36}$/.test(installationId)) {
       this.r2Prefix = `brains/${installationId}/`;
+      await this.ctx.storage.put("installationId", installationId);
       // Reload brain summary for this installation
       await this.loadBrainSummary();
     }
 
-    // If repo provided, store for source links
+    // If repo provided, store for source links and persist
     if (repo) {
       this.repoFullName = repo;
+      await this.ctx.storage.put("repoFullName", repo);
     }
 
     // Call parent fetch (McpAgent's SSE handler)
@@ -161,8 +179,8 @@ export class HomeBrainMCP extends McpAgent<Env> {
   }
 
   async init() {
-    // Determine R2 prefix for this installation
-    this.initR2Prefix();
+    // Determine R2 prefix for this installation (checks DO name, then persistent storage)
+    await this.initR2Prefix();
     // Try to load brain summary from R2 (non-blocking, cached)
     await this.loadBrainSummary();
     // Register about tool — returns different content based on whether installation is scoped
@@ -212,6 +230,10 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
 - **list_recent**: See recently modified files
 - **list_folders**: Browse the folder structure
 - **brain_inbox** / **brain_inbox_save**: Save notes to the user's inbox
+- **brain_account**: Set up email-to-brain forwarding, verify sender addresses, claim vanity aliases (e.g. "name@brainstem.cc")
+
+## Email Input
+Forward emails to your brainstem address to save them as inbox notes. IMPORTANT: When the user asks about email setup, forwarding, or email handling for brainstem — use the brain_account tool (action: "status" to start), do NOT search the brain for email-related docs.
 
 ## Prompts (Slash Commands)
 If you need to explicitly invoke a tool, these prompts are available:
@@ -234,6 +256,9 @@ Note: When the user asks about their personal information, family, projects, or 
 
     // Register MCP App UI resource for brain_inbox composer
     this.registerInboxAppResource();
+
+    // Register account management tool (email setup, aliases)
+    this.registerBrainAccount();
   }
 
   /**
@@ -602,82 +627,33 @@ Note: When the user asks about their personal information, family, projects, or 
       },
       async ({ title, content, filePath: providedPath }) => {
         try {
-          // Generate file path if not provided
-          let filePath = providedPath;
-          if (!filePath) {
-            const safeTitle = sanitizeInboxTitle(title);
-            const timestamp = new Date()
-              .toISOString()
-              .replace(/[:.]/g, "-")
-              .slice(0, 19);
-            const filename = `${timestamp}-${safeTitle}.md`;
-            filePath = `inbox/${filename}`;
+          const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
+          if (!installationUuid) {
+            return {
+              content: [{ type: "text" as const, text: "Cannot save: no installation context. Use a personalized MCP URL." }],
+              isError: true,
+            };
           }
 
-          // Write to R2
-          await this.env.R2.put(
-            `${this.r2Prefix}${filePath}`,
-            content
-          );
+          const result = await saveToInbox(this.env, installationUuid, title, content, {
+            filePath: providedPath,
+          });
 
-          // Write to GitHub repo
-          if (this.repoFullName && this.r2Prefix) {
-            try {
-              const [owner, repo] = this.repoFullName.split("/");
-              const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
-              if (installationUuid) {
-                const installation = await this.env.DB.prepare(
-                  "SELECT github_installation_id FROM installations WHERE id = ?"
-                ).bind(installationUuid).first<{ github_installation_id: number }>();
-
-                if (installation) {
-                  const token = await getInstallationToken(
-                    this.env,
-                    installation.github_installation_id
-                  );
-                  await createRepoFile(
-                    token,
-                    owner,
-                    repo,
-                    filePath,
-                    content,
-                    `Add brain inbox note: ${title}`
-                  );
-                }
-              }
-            } catch (ghError) {
-              console.error("Failed to write to GitHub:", ghError);
-              const ghMsg = ghError instanceof Error ? ghError.message : "unknown";
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: `Note saved to brain inbox (R2 only): ${filePath}\nGitHub write failed: ${ghMsg}`,
-                  },
-                ],
-                structuredContent: { filePath, r2: true, github: false, error: ghMsg },
-              };
-            }
+          if (result.error) {
+            return {
+              content: [{ type: "text" as const, text: `Note saved to brain inbox (R2 only): ${result.filePath}\nGitHub write failed: ${result.error}` }],
+              structuredContent: { filePath: result.filePath, r2: result.r2, github: result.github, error: result.error },
+            };
           }
 
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Note saved to brain inbox: ${filePath}`,
-              },
-            ],
-            structuredContent: { filePath, r2: true, github: true },
+            content: [{ type: "text" as const, text: `Note saved to brain inbox: ${result.filePath}` }],
+            structuredContent: { filePath: result.filePath, r2: result.r2, github: result.github },
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unknown error";
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Failed to save note: ${message}`,
-              },
-            ],
+            content: [{ type: "text" as const, text: `Failed to save note: ${message}` }],
             isError: true,
           };
         }
@@ -701,6 +677,232 @@ Note: When the user asks about their personal information, family, projects, or 
         ],
       }),
     );
+  }
+
+  /**
+   * brain_account - Manage email forwarding, verified senders, and vanity aliases
+   */
+  private registerBrainAccount() {
+    this.server.tool(
+      "brain_account",
+      `IMPORTANT: When the user asks to set up email, configure email forwarding, or anything about sending emails to their brain — call this tool IMMEDIATELY with action "status" to start. Do NOT search the brain first.` +
+      `\n\nThis tool sets up and manages email-to-brain forwarding. The brainstem server has built-in email processing — users forward emails to their @brainstem.cc address and they appear as inbox notes.` +
+      `\n\nUSE THIS TOOL FOR:` +
+      `\n• Setting up email forwarding to the brain inbox` +
+      `\n• Verifying a personal email address as an authorized sender` +
+      `\n• Claiming a vanity address like "name@brainstem.cc"` +
+      `\n• Checking email configuration status` +
+      `\n• Removing a previously verified email address` +
+      `\n\nActions: request_email (start verification for a sender address), check_alias / request_alias (vanity addresses), remove_email, status (show current config — use this first).`,
+      {
+        action: z.enum([
+          "request_email",
+          "check_alias",
+          "request_alias",
+          "remove_email",
+          "status",
+        ]).describe("Action to perform"),
+        email: z.string().email().optional().describe("Email address (for request_email, remove_email)"),
+        alias: z.string().optional().describe("Vanity alias name without @brainstem.cc (for check_alias, request_alias)"),
+      },
+      async ({ action, email, alias }) => {
+        const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
+        if (!installationUuid) {
+          return {
+            content: [{ type: "text" as const, text: "Email setup requires a personalized MCP URL. Visit https://brainstem.cc/setup to get started." }],
+            isError: true,
+          };
+        }
+
+        try {
+          await ensureEmailTables(this.env.DB);
+
+          switch (action) {
+            case "request_email":
+              return await this.handleRequestEmail(installationUuid, email);
+            case "check_alias":
+              return await this.handleCheckAlias(alias);
+            case "request_alias":
+              return await this.handleRequestAlias(installationUuid, alias);
+            case "remove_email":
+              return await this.handleRemoveEmail(installationUuid, email);
+            case "status":
+              return await this.handleEmailStatus(installationUuid);
+            default:
+              return { content: [{ type: "text" as const, text: `Unknown action: ${action}` }], isError: true };
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "Unknown error";
+          return { content: [{ type: "text" as const, text: `Account operation failed: ${msg}` }], isError: true };
+        }
+      }
+    );
+  }
+
+  private async handleRequestEmail(installationUuid: string, email?: string) {
+    if (!email) {
+      return { content: [{ type: "text" as const, text: "Please provide an email address to verify." }], isError: true };
+    }
+
+    // Ensure default alias exists (enable email on first use)
+    const defaultAlias = `brain+${installationUuid}`;
+    await this.env.DB.prepare(
+      "INSERT OR IGNORE INTO email_aliases (alias, installation_id, type, created_at) VALUES (?, ?, 'default', ?)"
+    ).bind(defaultAlias, installationUuid, new Date().toISOString()).run();
+
+    // Check if already confirmed
+    const existing = await this.env.DB.prepare(
+      "SELECT status FROM verified_senders WHERE installation_id = ? AND email = ?"
+    ).bind(installationUuid, email.toLowerCase()).first<{ status: string }>();
+
+    if (existing?.status === "confirmed") {
+      return {
+        content: [{ type: "text" as const, text: `${email} is already verified for this brain.` }],
+      };
+    }
+
+    // Generate confirmation code
+    const code = generateConfirmationCode();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const brainstemAddress = `${defaultAlias}@brainstem.cc`;
+
+    if (existing) {
+      // Update existing pending entry with new code
+      await this.env.DB.prepare(
+        "UPDATE verified_senders SET confirmation_code = ?, confirmation_expires_at = ? WHERE installation_id = ? AND email = ?"
+      ).bind(code, expiresAt, installationUuid, email.toLowerCase()).run();
+    } else {
+      // Insert new pending entry
+      await this.env.DB.prepare(
+        `INSERT INTO verified_senders (id, installation_id, email, status, confirmation_code, confirmation_expires_at, created_at)
+         VALUES (?, ?, ?, 'pending', ?, ?, ?)`
+      ).bind(crypto.randomUUID(), installationUuid, email.toLowerCase(), code, expiresAt, new Date().toISOString()).run();
+    }
+
+    // Also check for vanity alias
+    const vanity = await this.env.DB.prepare(
+      "SELECT alias FROM email_aliases WHERE installation_id = ? AND type = 'vanity'"
+    ).bind(installationUuid).first<{ alias: string }>();
+    const addresses = [brainstemAddress];
+    if (vanity) addresses.push(`${vanity.alias}@brainstem.cc`);
+
+    return {
+      content: [{
+        type: "text" as const,
+        text: `To verify ${email}, send an email with the subject **${code}** to **${brainstemAddress}** from ${email}.\n\nThe code expires in 24 hours.${vanity ? `\n\nYou can also send to: ${vanity.alias}@brainstem.cc` : ""}`,
+      }],
+    };
+  }
+
+  private async handleCheckAlias(alias?: string) {
+    if (!alias) {
+      return { content: [{ type: "text" as const, text: "Please provide an alias to check." }], isError: true };
+    }
+
+    const validation = validateAlias(alias);
+    if (!validation.valid) {
+      return { content: [{ type: "text" as const, text: `Invalid alias: ${validation.error}` }] };
+    }
+
+    const existing = await this.env.DB.prepare(
+      "SELECT alias FROM email_aliases WHERE alias = ?"
+    ).bind(alias).first<{ alias: string }>();
+
+    return {
+      content: [{
+        type: "text" as const,
+        text: existing
+          ? `${alias}@brainstem.cc is already taken.`
+          : `${alias}@brainstem.cc is available!`,
+      }],
+    };
+  }
+
+  private async handleRequestAlias(installationUuid: string, alias?: string) {
+    if (!alias) {
+      return { content: [{ type: "text" as const, text: "Please provide an alias to claim." }], isError: true };
+    }
+
+    const validation = validateAlias(alias);
+    if (!validation.valid) {
+      return { content: [{ type: "text" as const, text: `Invalid alias: ${validation.error}` }], isError: true };
+    }
+
+    // Enforce 1 vanity alias per installation
+    const existingVanity = await this.env.DB.prepare(
+      "SELECT alias FROM email_aliases WHERE installation_id = ? AND type = 'vanity'"
+    ).bind(installationUuid).first<{ alias: string }>();
+
+    if (existingVanity) {
+      return {
+        content: [{ type: "text" as const, text: `You already have a vanity alias: ${existingVanity.alias}@brainstem.cc. Only one vanity alias per installation is allowed.` }],
+        isError: true,
+      };
+    }
+
+    // Try to claim (PK constraint prevents races)
+    try {
+      await this.env.DB.prepare(
+        "INSERT INTO email_aliases (alias, installation_id, type, created_at) VALUES (?, ?, 'vanity', ?)"
+      ).bind(alias, installationUuid, new Date().toISOString()).run();
+    } catch {
+      return { content: [{ type: "text" as const, text: `${alias}@brainstem.cc is already taken.` }] };
+    }
+
+    return {
+      content: [{ type: "text" as const, text: `Claimed! Your brainstem address is now **${alias}@brainstem.cc**. Both this and brain+${installationUuid}@brainstem.cc will work.` }],
+    };
+  }
+
+  private async handleRemoveEmail(installationUuid: string, email?: string) {
+    if (!email) {
+      return { content: [{ type: "text" as const, text: "Please provide an email address to remove." }], isError: true };
+    }
+
+    const result = await this.env.DB.prepare(
+      "DELETE FROM verified_senders WHERE installation_id = ? AND email = ?"
+    ).bind(installationUuid, email.toLowerCase()).run();
+
+    if (result.meta.changes === 0) {
+      return { content: [{ type: "text" as const, text: `${email} was not found in your verified senders.` }] };
+    }
+
+    return { content: [{ type: "text" as const, text: `Removed ${email} from verified senders.` }] };
+  }
+
+  private async handleEmailStatus(installationUuid: string) {
+    const aliases = await this.env.DB.prepare(
+      "SELECT alias, type FROM email_aliases WHERE installation_id = ?"
+    ).bind(installationUuid).all<{ alias: string; type: string }>();
+
+    const senders = await this.env.DB.prepare(
+      "SELECT email, status, confirmed_at FROM verified_senders WHERE installation_id = ?"
+    ).bind(installationUuid).all<{ email: string; status: string; confirmed_at: string | null }>();
+
+    if (!aliases.results?.length) {
+      return {
+        content: [{ type: "text" as const, text: "Email forwarding is not set up yet. Use `request_email` with your email address to get started." }],
+      };
+    }
+
+    let output = "## Email Configuration\n\n";
+
+    output += "### Brainstem Addresses\n";
+    for (const a of aliases.results) {
+      output += `- **${a.alias}@brainstem.cc** (${a.type})\n`;
+    }
+
+    output += "\n### Verified Senders\n";
+    if (senders.results?.length) {
+      for (const s of senders.results) {
+        const statusEmoji = s.status === "confirmed" ? "confirmed" : "pending";
+        output += `- ${s.email} — ${statusEmoji}${s.confirmed_at ? ` (since ${s.confirmed_at.split("T")[0]})` : ""}\n`;
+      }
+    } else {
+      output += "No verified senders yet.\n";
+    }
+
+    return { content: [{ type: "text" as const, text: output }] };
   }
 
   /**
@@ -1296,54 +1498,6 @@ function renderSuccessPage(mcpUrl: string, repoName: string): Response {
 }
 
 /**
- * Trigger AI Search re-indexing via Cloudflare API
- * This is needed because AI Search only auto-indexes every 6 hours
- * Endpoint: POST /accounts/{account_id}/ai-search/instances/{name}/jobs
- */
-async function triggerAISearchReindex(env: Env): Promise<{ success: boolean; message: string }> {
-  if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_API_TOKEN) {
-    console.log("AI Search reindex skipped: missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN");
-    return { success: false, message: "Missing API credentials for AI Search reindex" };
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai-search/instances/${env.AUTORAG_NAME}/jobs`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    const data = await response.json() as { success: boolean; errors?: Array<{ code: number; message: string }> };
-
-    if (data.success) {
-      console.log("AI Search reindex triggered successfully");
-      return { success: true, message: "Reindex triggered" };
-    } else {
-      const errorCode = data.errors?.[0]?.code;
-      const errorMsg = data.errors?.[0]?.message || "Unknown error";
-
-      // sync_in_cooldown (7020) means a sync was already triggered recently - not a real error
-      if (errorCode === 7020) {
-        console.log("AI Search sync in cooldown period (sync already triggered recently)");
-        return { success: true, message: "Sync already in progress or recently completed" };
-      }
-
-      console.error("AI Search reindex failed:", errorMsg);
-      return { success: false, message: errorMsg };
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("AI Search reindex error:", error);
-    return { success: false, message };
-  }
-}
-
-/**
  * Log webhook attempt to D1 for diagnostics
  */
 async function logWebhook(
@@ -1655,6 +1809,11 @@ async function deleteInstallation(env: Env, installationUuid: string): Promise<{
   if (inst?.user_id) {
     await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(inst.user_id).run();
   }
+
+  // Clean up email-related data for this installation
+  await env.DB.prepare("DELETE FROM email_aliases WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
+  await env.DB.prepare("DELETE FROM verified_senders WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
+  await env.DB.prepare("DELETE FROM email_log WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
 
   // Trigger AI Search reindex to drop stale vectors
   await triggerAISearchReindex(env);
@@ -2646,5 +2805,15 @@ export default {
     }
 
     return new Response("Not found", { status: 404 });
+  },
+
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    try {
+      const { handleInboundEmail } = await import("./email");
+      await handleInboundEmail(message, env);
+    } catch (error) {
+      // Never throw from email handler — log and silently drop
+      console.error("Email handler error:", error);
+    }
   },
 };

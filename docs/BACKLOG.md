@@ -34,9 +34,30 @@ No way to revoke a bearer token before expiry. A compromised token remains valid
 
 **Fix:** Add `/oauth/revoke` endpoint that deletes the session from D1.
 
+### Complete data purge on app uninstall
+
+`deleteInstallation()` purges R2 files, the installation D1 record, sessions, and email-related data. But the `users` row, `oauth_clients`, and `authorization_codes` records persist after uninstall.
+
+**Fix:** Audit the full uninstall path. Delete or anonymize the `users` row. Revoke and delete `oauth_clients` and `authorization_codes` associated with the user. Ensure no PII remains in D1 after the user disconnects.
+
 ---
 
 ## Medium — Product quality
+
+### `structuredContent` breaks Claude.ai MCP proxy
+
+Tools that return `structuredContent` (MCP Apps extension field from `@modelcontextprotocol/ext-apps`) fail when called via Claude.ai's MCP connector. The proxy returns JSON-RPC error `-32600` ("Anthropic Proxy: Invalid content from server"). The same tool calls succeed via direct MCP clients (e.g., Node.js `@modelcontextprotocol/sdk` client, Claude Desktop).
+
+**Affected tools:** `brain_inbox_save`, `brain_inbox` — both return `structuredContent` alongside the standard `content` array.
+
+**Workaround:** Users can still use these tools from Claude Desktop or Claude Code. The Claude.ai connector only fails on the tool response — the tool itself executes successfully (the note is saved).
+
+**Fix options:**
+1. Conditionally omit `structuredContent` when the client doesn't advertise MCP Apps support (check client capabilities during initialization)
+2. Move `structuredContent` into a separate response path that only activates for MCP Apps-capable clients
+3. Wait for Claude.ai to support the MCP Apps extension spec
+
+**Reproduction:** Connect brainstem MCP via Claude.ai connector → invoke `brain_inbox_save` → observe `-32600` error. Same call via `node test-user-mcp.mjs` succeeds.
 
 ### Web clipping (bookmarklet / share sheet / iOS Shortcut)
 
@@ -138,6 +159,7 @@ The setup page is minimal. Could add progress indicators, repo selection (for mu
 
 Items completed in v4.4+:
 
+- **Email input (v5.0):** `brain_account` MCP tool for email forwarding setup. Inbound code verification (MailChannels deprecated — no outbound email). Cloudflare Email Routing catch-all `*@brainstem.cc` → Worker `email()` handler. MIME parsing via postal-mime + Turndown HTML→markdown. Shared `saveToInbox()` extracted to `src/inbox.ts`. `triggerAISearchReindex()` extracted to `src/cloudflare.ts`. D1 tables: `email_aliases`, `verified_senders`, `email_log` (auto-migrated). Rate limiting (50/sender/day, 200/installation/day). Vanity aliases, sub-address routing (`brain+{uuid}@`), sender verification, email cleanup on uninstall. 74 total unit tests (27 new). DO state persistence fix via `this.ctx.storage`. E2E verified. See [ADR-008](adr/008-email-input.md).
 - **Tool metadata & prompts (v4.7):** Improved `search_brain` tool description to encourage automatic use — removed "private" framing that caused Claude to hesitate, added semantic triggers (info unlikely in training data, augmenting memory), added common phrase triggers. Added MCP prompts (`brain_search`, `brain_inbox`) as explicit tool invocation fallbacks. Updated `about` tool to document prompts and reinforce tool usage. Server advertises `prompts` capability; Claude Desktop UI support for prompts is pending (prompts work via explicit instruction).
 - **Unit test coverage (v4.6):** Added 47 unit tests using Vitest covering extractable business logic: webhook signature verification (HMAC-SHA256, security-critical), file filtering (extension/sensitive file/directory exclusion logic), webhook payload parsing (changed/removed file extraction, deduplication), and title sanitization (inbox filename normalization). Pure functions extracted to `src/utils.ts` for testability (no Workers dependencies). Establishes regression safety net for ADR-005 refactor (ChatGPT App dual distribution). Tests run via `npm test` and `npm run test:watch`.
 - **Tool metadata enhancements (v4.5):** Updated `brain_inbox` and `brain_inbox_save` tool descriptions to guide clients on which tool to use. `brain_inbox_save` is now callable by models directly (removed `visibility: ["app"]`) with optional `filePath` parameter and auto-generation. `brain_inbox` description clarifies it's for UI hosts only. Non-UI hosts and AI agents should use `brain_inbox_save` instead for direct saves.
@@ -162,16 +184,6 @@ Items completed in v4.0-v4.3, for changelog reference:
 - **Success page redesign:** Copy-button fields matching Claude.ai connector labels; note that OAuth Client ID/Secret not needed
 - **Generic MCP at bare `/mcp`:** About-only tool with connection instructions when no installation scoped
 - **Bare `/mcp` GET blocked:** Returns 404 JSON with setup instructions
-
----
-
-## In Progress
-
-### Email input (v5.0)
-
-Forward emails to brainstem inbox. MCP-native onboarding via `brain_account` tool, verified sender list, vanity aliases (`dan@brainstem.cc`), Cloudflare Email Routing + MailChannels.
-
-**Docs**: [PRD-002](prd/002-input-modalities.md) | [ADR-008](adr/008-email-input.md) | [Tasks](tasks/002-input-modalities.md)
 
 ---
 

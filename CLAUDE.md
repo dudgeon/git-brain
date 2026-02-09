@@ -44,6 +44,8 @@ Instead, clearly state what you're blocked on and what you need from the user.
 
 **Sync before committing:** Always `git fetch && git status` before committing to check for remote changes. If behind, stash local changes, pull, then pop. This repo may have concurrent sessions from different Claude instances.
 
+**Never ignore MCP server errors:** When an MCP tool call fails — whether from Claude.ai, Claude Desktop, Claude Code, or a test script — treat it as a potential product bug. Investigate the root cause immediately (check error codes, compare behavior across clients, inspect server responses). Log the issue in `docs/BACKLOG.md` even if you work around it. Do not silently switch to a workaround and move on.
+
 **Design tool metadata for semantic understanding:** When writing MCP tool descriptions, focus on *why* Claude should use the tool (semantic categories), not just trigger phrases. Good: "Use for information about the user unlikely to be in training data or public sources." Bad: "Use when user says 'search the brain'." Semantic descriptions generalize; phrase matching is brittle.
 
 ## Architecture
@@ -53,7 +55,9 @@ GitHub Push → Webhook → Worker → R2 Bucket → AI Search (reindex) → MCP
                           ↓
                    Durable Objects (session state)
                           ↓
-                   D1 Database (installations, logs)
+                   D1 Database (installations, logs, email)
+
+Email → Cloudflare Email Routing → Worker email() → R2 + GitHub (via saveToInbox)
 ```
 
 **Key flow:**
@@ -74,6 +78,7 @@ GitHub Push → Webhook → Worker → R2 Bucket → AI Search (reindex) → MCP
 | D1 Database | `brain-stem-db` | Stores installations and webhook logs |
 | MCP Server | `home-brain-mcp` | Cloudflare Worker exposing tools via MCP protocol |
 | Durable Objects | `HomeBrainMCP` | Maintains MCP session state across requests |
+| Email Routing | `*@brainstem.cc` | Catch-all routes inbound email to Worker `email()` handler |
 
 ## Tech Stack
 
@@ -85,6 +90,8 @@ GitHub Push → Webhook → Worker → R2 Bucket → AI Search (reindex) → MCP
 - **Auth**: GitHub App + GitHub OAuth 2.0
 - **Language**: TypeScript
 - **Validation**: Zod
+- **Email Parsing**: `postal-mime` (MIME) + `turndown` (HTML→markdown)
+- **Email Routing**: Cloudflare Email Routing (catch-all → Worker)
 - **MCP Apps UI**: `@modelcontextprotocol/ext-apps` + Vite + `vite-plugin-singlefile`
 
 ## Project Structure
@@ -104,12 +111,18 @@ git-brain/
 ├── docs/
 │   ├── BACKLOG.md             # Product backlog (prioritized)
 │   └── adr/                   # Architecture Decision Records
+├── scripts/
+│   └── setup-email-routing.mjs  # Cloudflare Email Routing configuration script
 ├── src/
 │   ├── index.ts           # Main Worker, MCP server, HTTP routes
 │   ├── github.ts          # GitHub API helpers (auth, fetch files)
-│   ├── utils.ts           # Pure utility functions (extractChangedFiles, sanitizeInboxTitle)
+│   ├── cloudflare.ts      # Cloudflare API helpers (AI Search reindex)
+│   ├── inbox.ts           # Shared inbox logic (saveToInbox, ensureEmailTables)
+│   ├── email.ts           # Inbound email handler (routing, verification, MIME parsing)
+│   ├── utils.ts           # Pure utility functions (extractChangedFiles, sanitizeInboxTitle, validateAlias)
 │   ├── github.test.ts     # Unit tests for GitHub helpers (webhook signature, file filtering)
 │   ├── index.test.ts      # Unit tests for business logic (webhook parsing, title sanitization)
+│   ├── email.test.ts      # Unit tests for email functions (alias validation, code gen, parsing)
 │   └── html.d.ts          # Type declarations for .html imports
 └── ui/
     ├── brain-inbox/       # Brain Inbox Composer app source
@@ -209,6 +222,7 @@ All MCP connections require a bearer token from OAuth. The legacy `/mcp` endpoin
 | `list_folders` | Browse folder structure | `path?` | ✅ Explorer |
 | `brain_inbox` | Preview a note before saving (UI hosts only) | `title`, `content` | ✅ Composer |
 | `brain_inbox_save` | Save a note to the inbox (R2 + GitHub) | `title`, `content`, `filePath?` | — |
+| `brain_account` | Manage email-to-brain forwarding | `action`, `email?`, `alias?` | — |
 
 ### Brain Inbox Tools
 
@@ -227,6 +241,33 @@ In non-UI hosts, `brain_inbox` returns the draft text but does NOT save. Use `br
 **Build pipeline:** `npm run build:ui` → Vite bundles the app into a single HTML file (`ui/dist/index.html`) → Wrangler imports it as a text module → served via `registerAppResource`. The `deploy` and `dev` scripts run `build:ui` automatically.
 
 See `docs/adr/` for architecture decisions (ADR-004: inbox composer, ADR-006: explorer).
+
+### Email Input (`brain_account` tool)
+
+Users can forward emails to their `@brainstem.cc` address to save them as inbox notes. The `brain_account` tool manages the full email setup lifecycle.
+
+**Actions:**
+- `status` — Show current email config (aliases, verified senders, recent email count). Use this first.
+- `request_email` — Start verification for a sender email address. Returns a 6-character code.
+- `check_alias` / `request_alias` — Check availability or claim a vanity address (e.g., `dan@brainstem.cc`)
+- `remove_email` — Remove a previously verified sender
+
+**Verification flow (inbound code verification):**
+1. User calls `brain_account` with `action: "request_email"` and their email address
+2. Tool returns a 6-character confirmation code and the user's brainstem address
+3. User sends an email with the code as the subject to their brainstem address
+4. Worker matches code + sender → marks as verified
+5. Future emails from that sender are saved as inbox notes automatically
+
+**Why inbound verification?** MailChannels free-for-Workers was shut down August 2024. Cloudflare `send_email` binding only works for pre-verified destination addresses. Inbound code verification is fully self-contained with zero external services.
+
+**Email processing pipeline:** Cloudflare Email Routing (catch-all `*@brainstem.cc`) → Worker `email()` handler → routing resolution (sub-address `brain+{uuid}@` or alias lookup) → sender verification check → MIME parsing (postal-mime + Turndown for HTML→markdown) → `saveToInbox()` → R2 + GitHub + AI Search reindex
+
+**Key files:** `src/email.ts` (handler), `src/inbox.ts` (shared save logic), `src/cloudflare.ts` (reindex helper)
+
+**D1 tables:** `email_aliases`, `verified_senders`, `email_log` (auto-created via `ensureEmailTables()`)
+
+**ADR:** [ADR-008: Email Input](docs/adr/008-email-input.md)
 
 ### MCP Prompts (Slash Commands)
 
@@ -325,7 +366,8 @@ Connected!
     { "name": "get_document", ... },
     { "name": "list_recent", ... },
     { "name": "list_folders", ... },
-    { "name": "brain_inbox", ... }
+    { "name": "brain_inbox", ... },
+    { "name": "brain_account", ... }
   ]
 }
 ```
@@ -412,6 +454,46 @@ CREATE TABLE webhook_logs (
   payload_summary TEXT,
   status TEXT,
   error TEXT
+);
+```
+
+### `email_aliases` table (auto-created via `ensureEmailTables`)
+```sql
+CREATE TABLE email_aliases (
+  alias TEXT PRIMARY KEY,
+  installation_id TEXT NOT NULL,
+  type TEXT NOT NULL,              -- 'default' (brain+uuid) or 'vanity'
+  created_at TEXT NOT NULL
+);
+```
+
+### `verified_senders` table (auto-created via `ensureEmailTables`)
+```sql
+CREATE TABLE verified_senders (
+  id TEXT PRIMARY KEY,
+  installation_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending' or 'confirmed'
+  confirmation_code TEXT,
+  confirmation_expires_at TEXT,
+  created_at TEXT NOT NULL,
+  confirmed_at TEXT,
+  UNIQUE(installation_id, email)
+);
+```
+
+### `email_log` table (auto-created via `ensureEmailTables`)
+```sql
+CREATE TABLE email_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  received_at TEXT NOT NULL,
+  installation_id TEXT,
+  from_address TEXT,
+  to_address TEXT,
+  subject TEXT,
+  status TEXT NOT NULL,            -- 'saved', 'verified', 'rejected_*', 'error'
+  error TEXT,
+  inbox_path TEXT
 );
 ```
 
@@ -537,6 +619,24 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 ## Current Status
 
+**v5.0 — Email Input (Forward Emails to Brain):**
+- ✅ `brain_account` MCP tool: manage email forwarding setup, sender verification, vanity aliases
+- ✅ Inbound code verification flow (no outbound email needed — MailChannels deprecated)
+- ✅ Cloudflare Email Routing: catch-all `*@brainstem.cc` → Worker `email()` handler
+- ✅ MIME parsing: postal-mime for text extraction, Turndown for HTML→markdown fallback
+- ✅ Shared `saveToInbox()` extracted to `src/inbox.ts` (used by both `brain_inbox_save` and email handler)
+- ✅ `triggerAISearchReindex()` extracted to `src/cloudflare.ts` (breaks circular imports)
+- ✅ D1 tables: `email_aliases`, `verified_senders`, `email_log` (auto-migrated via `ensureEmailTables`)
+- ✅ Rate limiting: 50 emails/sender/day, 200 emails/installation/day
+- ✅ Vanity aliases: `dan@brainstem.cc` (one per installation, 3-30 chars, reserved words blocked)
+- ✅ Sub-address routing: `brain+{uuid}@brainstem.cc` for direct UUID-based delivery
+- ✅ Email cleanup on uninstall: aliases, verified senders, and email logs purged with installation
+- ✅ 74 unit tests (27 new for email functions: alias validation, code generation, address parsing, frontmatter)
+- ✅ Durable Object state persistence fix: `installationId` and `repoFullName` survive hibernation via `this.ctx.storage`
+- ✅ Tool metadata optimized: `IMPORTANT:` directive prevents `search_brain` from capturing email queries
+- ✅ E2E verified: full verification flow + email save tested in production
+- ✅ ADR-008: Email Input architecture decision documented
+
 **v4.7 — Tool Metadata & Prompts (Discoverability Improvements):**
 - ✅ Improved `search_brain` tool description to encourage automatic use
 - ✅ Removed "private" framing that caused Claude to hesitate
@@ -577,7 +677,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 - ✅ Dynamic Client Registration (`/oauth/register`)
 - ✅ PKCE support (S256)
 - ✅ Claude.ai automatic connector integration
-- ✅ 7 MCP tools: about, search_brain, get_document, list_recent, list_folders, brain_inbox, brain_inbox_save
+- ✅ 8 MCP tools: about, search_brain, get_document, list_recent, list_folders, brain_inbox, brain_inbox_save, brain_account
 - ✅ Initial sync on setup (background via `waitUntil`)
 - ✅ Account deletion: R2 purge, D1 cleanup, session revocation on GitHub App uninstall
 - ✅ Manual deletion via `/debug/delete/{uuid}`
@@ -616,3 +716,4 @@ See [docs/BACKLOG.md](docs/BACKLOG.md) for the full prioritized product backlog.
 - [R2 Documentation](https://developers.cloudflare.com/r2/)
 - [GitHub Apps](https://docs.github.com/en/apps)
 - [MCP Apps Extension](https://github.com/modelcontextprotocol/ext-apps)
+- [Cloudflare Email Routing](https://developers.cloudflare.com/email-routing/)
