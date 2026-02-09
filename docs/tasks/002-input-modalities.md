@@ -1,6 +1,6 @@
 # Tasks: Email Input Build Plan
 
-**Related**: [PRD-002](../prd/002-input-modalities.md), [ERD-001](../erd/001-input-modalities.md), [ADR-008](../adr/008-email-input.md)
+**Related**: [PRD-002](../prd/002-input-modalities.md), [ADR-008](../adr/008-email-input.md)
 **Last updated**: 2026-02-09
 
 This is a 3-session build. Each session should complete one numbered group. Tasks within a group can often be parallelized; groups should be completed in order.

@@ -171,7 +171,7 @@ Items completed in v4.0-v4.3, for changelog reference:
 
 Forward emails to brainstem inbox. MCP-native onboarding via `brain_account` tool, verified sender list, vanity aliases (`dan@brainstem.cc`), Cloudflare Email Routing + MailChannels.
 
-**Docs**: [PRD-002](prd/002-input-modalities.md) | [ERD-001](erd/001-input-modalities.md) | [ADR-008](adr/008-email-input.md) | [Tasks](tasks/002-input-modalities.md)
+**Docs**: [PRD-002](prd/002-input-modalities.md) | [ADR-008](adr/008-email-input.md) | [Tasks](tasks/002-input-modalities.md)
 
 ---
 

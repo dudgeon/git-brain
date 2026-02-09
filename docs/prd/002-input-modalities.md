@@ -3,7 +3,7 @@
 **Status**: Design Complete
 **Date**: 2026-02-09
 **Author**: Research session
-**Related**: [ERD-001](../erd/001-input-modalities.md) | [ADR-008](../adr/008-email-input.md) | [Tasks](../tasks/002-email-input.md)
+**Related**: [ADR-008](../adr/008-email-input.md) | [Tasks](../tasks/002-email-input.md)
 
 ## Problem
 
@@ -89,15 +89,59 @@ Both the vanity alias and the default `brain+{uuid}` address route to the same i
 
 ### D1 Schema
 
-See [ERD-001](../erd/001-input-modalities.md) for the full data model. Summary of new tables:
+Three new tables, all hanging off `installations`:
 
-| Table | Purpose |
-|-------|---------|
-| `email_aliases` | Maps local-part → installation (default + vanity addresses) |
-| `verified_senders` | Authorized sender emails with confirmation state |
-| `email_log` | Inbound email audit trail (last 200 entries) |
+```
+installations
+  ├──1:N──▶ email_aliases        (default + vanity addresses)
+  ├──1:N──▶ verified_senders     (who can email into this brain)
+  └──1:N──▶ email_log            (inbound email audit trail)
+```
 
-Plus one column addition: `users.default_installation_id` for future multi-brain routing.
+**`email_aliases`** — maps local-part to installation. Every installation gets a `type='default'` row (`brain+{uuid}`) when email is enabled. Vanity aliases are `type='vanity'`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `alias` | TEXT PK | Local part only (e.g., `"dan"` or `"brain+{uuid}"`) |
+| `installation_id` | TEXT FK | → installations.id |
+| `type` | TEXT NOT NULL | `'default'` or `'vanity'` |
+| `created_at` | TEXT NOT NULL | ISO 8601 |
+
+- One vanity alias per installation (enforced in app logic, not schema)
+- Reserved aliases (`brain`, `admin`, `postmaster`, etc.) blocked in validation
+
+**`verified_senders`** — authorized sender emails with confirmation state.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | TEXT PK | UUID v4 |
+| `installation_id` | TEXT FK | → installations.id |
+| `email` | TEXT NOT NULL | e.g., `"dan@gmail.com"` |
+| `status` | TEXT NOT NULL | `'pending'` or `'confirmed'` |
+| `confirmation_id` | TEXT | UUID embedded in outbound email's `Message-ID` header |
+| `confirmation_expires_at` | TEXT | 24h TTL — prevents stale confirmations |
+| `created_at` | TEXT NOT NULL | ISO 8601 |
+| `confirmed_at` | TEXT | Set when reply received |
+
+- UNIQUE on `(installation_id, email)`
+- INDEX on `confirmation_id` for reply matching
+- Same email can be verified for multiple installations
+
+**`email_log`** — lightweight audit log for rate limiting and debugging.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | AUTOINCREMENT |
+| `received_at` | TEXT NOT NULL | ISO 8601 |
+| `installation_id` | TEXT | nullable (unroutable emails) |
+| `from_address` | TEXT | sender |
+| `to_address` | TEXT | recipient |
+| `subject` | TEXT | truncated to 200 chars |
+| `status` | TEXT NOT NULL | `saved`, `confirmed`, `rejected_sender`, `rejected_unroutable`, `rate_limited`, `error` |
+| `error` | TEXT | nullable |
+| `inbox_path` | TEXT | R2 path if saved |
+
+- Bounded: delete entries older than 7 days (same pattern as `webhook_logs`)
 
 ### Implementation Sketch
 

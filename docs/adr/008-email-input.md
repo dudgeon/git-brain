@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-02-09
-**Related:** PRD-002, ERD-001, ADR-004 (MCP Apps UI)
+**Related:** PRD-002, ADR-004 (MCP Apps UI)
 
 ## Context
 
