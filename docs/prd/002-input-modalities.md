@@ -18,17 +18,85 @@ This document explores three additional input modalities — all feeding the exi
 
 Cloudflare Email Routing can intercept inbound email at the MX level and route it to an Email Worker — the same Worker that runs the MCP server. A single Worker can export both `fetch()` and `email()` handlers.
 
-### Tenant Routing
+### Brainstem Email Addresses
 
-Each installation gets a unique email address:
+Each installation gets a unique email address. The default is:
 
 ```
 brain+{uuid}@brainstem.cc
 ```
 
-The Cloudflare Agents SDK has a built-in `createAddressBasedEmailResolver` that parses the sub-address (`+{uuid}`) and routes to the correct Durable Object instance. This aligns perfectly with the existing per-installation DO architecture.
+Users can optionally request a vanity address (e.g., `dan@brainstem.cc`) via the account management MCP tool (see Onboarding below). Both the default and any vanity address route to the same installation.
 
-Alternative: `inbox+{uuid}@brainstem.cc` or `{uuid}@brainstem.cc` (catch-all).
+The Cloudflare Agents SDK has a built-in `createAddressBasedEmailResolver` that parses the sub-address and routes to the correct Durable Object instance. Vanity addresses require a lookup table in D1.
+
+### Authentication: Sender Verification
+
+Email has no bearer token. Instead, the Worker verifies that the sender's `From` address is on the installation's **verified senders** list. Unverified senders get a bounce or are silently dropped.
+
+This prevents inbox spam from anyone who discovers the brainstem address — the address is the routing key, but not the auth credential.
+
+### Onboarding: MCP-Native Email Setup
+
+Email setup stays within the MCP conversation. The user never has to visit a settings page or configure anything outside of Claude. New MCP tool: `brain_account` (or extend `about`).
+
+**Flow:**
+
+```
+1. User (in Claude):  "I want to forward emails to my brain"
+2. Claude calls:      brain_account({ action: "request_email", email: "dan@gmail.com" })
+3. Server:            - Stores email as "pending" in D1 (new verified_senders table)
+                      - Sends confirmation email FROM brain+{uuid}@brainstem.cc
+                        TO dan@gmail.com
+                      - Subject: "Confirm your brainstem email connection"
+                      - Body: "Reply YES to this email to confirm."
+4. User:              Replies "yes" (or any affirmative) to the confirmation email
+5. Worker email():    - Receives reply at brain+{uuid}@brainstem.cc
+                      - Parses In-Reply-To header to match confirmation
+                      - Updates verified_senders: status = "confirmed"
+6. Claude calls:      brain_account({ action: "status" })
+7. Server returns:    { email: "dan@gmail.com", status: "confirmed",
+                        brainstem_address: "brain+{uuid}@brainstem.cc" }
+8. Claude tells user: "You're set. Forward emails to brain+{uuid}@brainstem.cc"
+```
+
+**Why reply-based confirmation:**
+- User proves they own the email address
+- No magic links or codes to copy — just reply to an email
+- The reply arrives at the same brainstem address, so the Worker can process it
+- The `In-Reply-To` / `References` headers link the reply to the original confirmation
+
+**Vanity address enhancement:**
+
+```
+User:   "Can I get dan@brainstem.cc instead?"
+Claude: brain_account({ action: "request_alias", alias: "dan" })
+Server: - Checks availability in D1
+        - If available, creates email_aliases record: alias="dan", installation_id={uuid}
+        - Returns: { alias: "dan@brainstem.cc", status: "active" }
+```
+
+### D1 Schema Additions
+
+```sql
+-- Verified sender addresses (who can email INTO a brain)
+CREATE TABLE verified_senders (
+  id TEXT PRIMARY KEY,                    -- UUID v4
+  installation_id TEXT NOT NULL,          -- FK to installations.id
+  email TEXT NOT NULL,                    -- e.g., "dan@gmail.com"
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'confirmed'
+  confirmation_id TEXT,                   -- UUID for matching reply
+  created_at TEXT NOT NULL,
+  confirmed_at TEXT
+);
+
+-- Vanity email aliases (optional custom brainstem addresses)
+CREATE TABLE email_aliases (
+  alias TEXT PRIMARY KEY,                 -- e.g., "dan" (for dan@brainstem.cc)
+  installation_id TEXT NOT NULL,          -- FK to installations.id
+  created_at TEXT NOT NULL
+);
+```
 
 ### Implementation Sketch
 
@@ -38,29 +106,46 @@ wrangler.toml:
   email = ["*@brainstem.cc"]
 
 Worker email() handler:
-  1. Parse recipient address → extract UUID
-  2. Verify installation exists in D1
-  3. Parse MIME body with postal-mime (npm package)
-  4. Extract subject → inbox title, body → content
-  5. Write to R2 at brains/{uuid}/inbox/{timestamp}-{sanitized-subject}.md
-  6. Commit to GitHub repo (same as brain_inbox_save)
-  7. Trigger AI Search reindex
+  1. Parse recipient address → resolve installation:
+     a. If brain+{uuid}@brainstem.cc → UUID from sub-address
+     b. If {alias}@brainstem.cc → lookup in email_aliases table
+  2. Check if this is a confirmation reply:
+     a. Parse In-Reply-To / References headers
+     b. If matches a pending confirmation_id → mark sender as confirmed, done
+  3. Verify sender:
+     a. Extract From address
+     b. Lookup in verified_senders for this installation
+     c. If not confirmed → bounce or drop
+  4. Parse MIME body with postal-mime (npm package)
+  5. Extract subject → inbox title, body → content
+  6. Write to R2 at brains/{uuid}/inbox/{timestamp}-{sanitized-subject}.md
+  7. Commit to GitHub repo (same as brain_inbox_save)
+  8. Trigger AI Search reindex
 ```
 
-### Authentication
+### Sending Confirmation Emails
 
-Email has no bearer token. Tenant identification comes from the `to` address (UUID in sub-address). This means **anyone who knows the UUID can email content into the inbox**. This is acceptable because:
+Cloudflare Workers can send email via:
+- **MailChannels API** (free for Workers, no signup) — send-only, ideal for transactional email
+- **Cloudflare Email Routing** — inbound only, cannot send
 
-- UUIDs are unguessable (128-bit random)
-- The same security model applies to Craigslist relay addresses, GitHub notification addresses, and Notion email-to-page
-- Optionally: verify sender email matches the GitHub account's email (but this breaks forwarding use cases)
+MailChannels is the right fit: one transactional email per confirmation, no ongoing sending.
 
-### What the User Sees
+### What the User Sees (in Claude)
 
-On the success/settings page, display:
+```
+User: "Set up email forwarding to my brain"
+Claude: "I'll set that up. What email address do you want to forward from?"
+User: "dan@gmail.com"
+Claude: [calls brain_account tool]
+        "Done — I sent a confirmation to dan@gmail.com from your brainstem
+         address. Reply to that email with 'yes' to confirm."
 
-> **Email to your brain:** `brain+a1b2c3d4-e5f6-...@brainstem.cc`
-> Forward any email to this address and it will appear in your inbox.
+         Once confirmed, forward any email to:
+           brain+a1b2c3d4-e5f6-...@brainstem.cc
+
+         Want me to check if it's confirmed yet?"
+```
 
 ### Domain Requirements
 
@@ -87,9 +172,28 @@ Use `postal-mime` (recommended by Cloudflare):
 - 200 routing rules max (not a concern with catch-all)
 - Same Worker CPU/memory limits apply
 
-### Complexity: Low
+### New MCP Tool: `brain_account`
 
-The email handler reuses the existing inbox save pipeline. New code: ~100 lines for the email handler + MIME parsing. One new npm dependency (`postal-mime`).
+Exposes email setup (and future account management) through the MCP interface:
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `request_email` | `email` | Start email verification for a sender address |
+| `request_alias` | `alias` | Request a vanity brainstem.cc address |
+| `status` | — | Show current email config, verified senders, alias |
+| `remove_email` | `email` | Remove a verified sender |
+
+This keeps all account management MCP-native — no separate settings page needed.
+
+### Complexity: Low-Medium
+
+The email handler reuses the existing inbox save pipeline. Added scope vs. the original "UUID-as-auth" design:
+- Confirmation email send/receive loop (+MailChannels integration)
+- `verified_senders` and `email_aliases` D1 tables
+- `brain_account` MCP tool
+- Two new npm dependencies (`postal-mime`, MailChannels is a fetch call)
+
+Estimated: ~300 lines for the email handler, verification flow, and MCP tool.
 
 ---
 
@@ -312,13 +416,13 @@ User → has sessions (bearer tokens)
 
 ### Impact of New Input Modalities
 
-| Modality | Tenant Resolution |
-|----------|-------------------|
-| **MCP** (existing) | UUID in URL path `/mcp/{uuid}` |
-| **Email** | UUID in email sub-address `brain+{uuid}@brainstem.cc` |
-| **Bookmarklet** | Session cookie → user → default installation (or picker) |
-| **PWA Share Target** | Session cookie → user → default installation (or picker) |
-| **iOS Shortcut** | Bearer token → user → installation (need to specify) |
+| Modality | Tenant Resolution | Sender Auth |
+|----------|-------------------|-------------|
+| **MCP** (existing) | UUID in URL path `/mcp/{uuid}` | Bearer token |
+| **Email** | UUID in sub-address or alias lookup | Verified sender list |
+| **Bookmarklet** | Session cookie → user → default installation | Cookie (OAuth) |
+| **PWA Share Target** | Session cookie → user → default installation | Cookie (OAuth) |
+| **iOS Shortcut** | Bearer token → user → installation | Bearer token |
 
 **For single-installation users** (the common case today), all modalities resolve unambiguously. The user has one brain, and all inputs go there.
 
@@ -379,7 +483,10 @@ All four are pure JS and known to work in Cloudflare Workers.
 
 1. **Multi-brain users**: Should the bookmarklet default to the most recently used brain, or always show a picker?
 2. **Content extraction depth**: Should we extract full articles by default, or just save the URL + title + selected text? Full extraction is more useful but adds latency and complexity.
-3. **Email abuse**: Should we rate-limit inbound email per installation? An attacker with a UUID could spam the inbox.
-4. **Cookie vs. token unification**: The MCP server uses bearer tokens; the bookmarklet would use cookies. Should we unify (set a cookie during OAuth that maps to the existing session)?
-5. **Shortcut distribution**: How to handle token rotation in iOS Shortcuts? If the session expires, the user has to manually update the shortcut.
-6. **Extracted content format**: Save as a single markdown file with metadata (URL, author, date) in frontmatter? Or save URL and content separately?
+3. **Cookie vs. token unification**: The MCP server uses bearer tokens; the bookmarklet would use cookies. Should we unify (set a cookie during OAuth that maps to the existing session)?
+4. **Shortcut distribution**: How to handle token rotation in iOS Shortcuts? If the session expires, the user has to manually update the shortcut.
+5. **Extracted content format**: Save as a single markdown file with metadata (URL, author, date) in frontmatter? Or save URL and content separately?
+6. **Email rate limiting**: Even with sender verification, a compromised sender account could flood the inbox. Should we rate-limit per sender (e.g., 50 emails/day)?
+7. **MailChannels availability**: MailChannels free-for-Workers was intermittently restricted in 2024. Verify current status before depending on it. Alternative: Cloudflare's Email Sending Workers (if available), or SES/Resend for transactional sends.
+8. **Vanity alias collisions**: First-come-first-served? Allow releasing aliases? Namespace concerns (e.g., `brain`, `admin`, `support` should be reserved)?
+9. **Confirmation UX for non-reply clients**: Some email clients make replying to specific messages awkward. Should we also support clicking a confirmation link as a fallback?
