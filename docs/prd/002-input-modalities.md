@@ -1,8 +1,9 @@
 # PRD-002: Input Modalities Beyond MCP
 
-**Status**: Research
+**Status**: Design Complete
 **Date**: 2026-02-09
 **Author**: Research session
+**Related**: [ERD-001](../erd/001-input-modalities.md) | [ADR-008](../adr/008-email-input.md) | [Tasks](../tasks/002-input-modalities.md)
 
 ## Problem
 
@@ -66,37 +67,37 @@ Email setup stays within the MCP conversation. The user never has to visit a set
 - The reply arrives at the same brainstem address, so the Worker can process it
 - The `In-Reply-To` / `References` headers link the reply to the original confirmation
 
-**Vanity address enhancement:**
+**Vanity alias (v1 scope):**
+
+Vanity aliases are first-class from launch — not a bolt-on. During email setup, the user can claim a memorable address. The availability check is a separate action so Claude can confirm before claiming.
 
 ```
 User:   "Can I get dan@brainstem.cc instead?"
+Claude: brain_account({ action: "check_alias", alias: "dan" })
+Server: - Validates format (3-30 chars, lowercase alphanum + hyphens/dots)
+        - Checks reserved list (admin, support, brain, postmaster, etc.)
+        - Queries D1: SELECT alias FROM email_aliases WHERE alias = 'dan'
+        - Returns: { alias: "dan", available: true }
+Claude: "dan@brainstem.cc is available. Want me to claim it?"
+User:   "Yes"
 Claude: brain_account({ action: "request_alias", alias: "dan" })
-Server: - Checks availability in D1
-        - If available, creates email_aliases record: alias="dan", installation_id={uuid}
+Server: - INSERT (atomic — PK constraint prevents race conditions)
         - Returns: { alias: "dan@brainstem.cc", status: "active" }
 ```
 
-### D1 Schema Additions
+Both the vanity alias and the default `brain+{uuid}` address route to the same installation. The vanity alias is for sharing; the default is always available as a fallback.
 
-```sql
--- Verified sender addresses (who can email INTO a brain)
-CREATE TABLE verified_senders (
-  id TEXT PRIMARY KEY,                    -- UUID v4
-  installation_id TEXT NOT NULL,          -- FK to installations.id
-  email TEXT NOT NULL,                    -- e.g., "dan@gmail.com"
-  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'confirmed'
-  confirmation_id TEXT,                   -- UUID for matching reply
-  created_at TEXT NOT NULL,
-  confirmed_at TEXT
-);
+### D1 Schema
 
--- Vanity email aliases (optional custom brainstem addresses)
-CREATE TABLE email_aliases (
-  alias TEXT PRIMARY KEY,                 -- e.g., "dan" (for dan@brainstem.cc)
-  installation_id TEXT NOT NULL,          -- FK to installations.id
-  created_at TEXT NOT NULL
-);
-```
+See [ERD-001](../erd/001-input-modalities.md) for the full data model. Summary of new tables:
+
+| Table | Purpose |
+|-------|---------|
+| `email_aliases` | Maps local-part → installation (default + vanity addresses) |
+| `verified_senders` | Authorized sender emails with confirmation state |
+| `email_log` | Inbound email audit trail (last 200 entries) |
+
+Plus one column addition: `users.default_installation_id` for multi-brain `/clip` routing.
 
 ### Implementation Sketch
 
@@ -448,21 +449,53 @@ The `brain_inbox_save` tool's internal logic should be extracted into a shared f
 
 ---
 
-## Implementation Priority
+## Implementation Phases
 
-| Phase | Modality | Effort | Value | Dependencies |
-|-------|----------|--------|-------|-------------|
-| **1** | Bookmarklet | Low | High | `/clip` endpoint, cookie auth, content extraction |
-| **1** | iOS Shortcut | Low | High | `/api/clip` endpoint (same as above) |
-| **2** | Email | Low | Medium | Cloudflare Email Routing setup, `postal-mime` |
-| **2** | PWA Share Target | Low | Medium | `manifest.json`, service worker |
-| **—** | X Bookmarks | High | Low | $200/month API cost, polling infra, OAuth with X |
+See [TASKS-002](../tasks/002-input-modalities.md) for the full task breakdown.
 
-**Phase 1 delivers the most value**: a bookmarklet for desktop and an iOS Shortcut cover the two most common "I want to save this" moments. They share the same `/clip` backend.
+### Phase 1: Foundation + Email (Sessions 1-3)
 
-**Phase 2 adds convenience**: email is useful for forwarding newsletters, receipts, and notes-to-self. PWA share target covers Android users.
+Build the shared infrastructure that all modalities need, then email end-to-end.
 
-**X Bookmarks is deferred** until the cost/value ratio improves.
+| Deliverable | Description |
+|-------------|-------------|
+| Shared inbox save function | Extract from `brain_inbox_save` into reusable `saveToInbox()` |
+| D1 migration | `email_aliases`, `verified_senders`, `email_log` tables + `users.default_installation_id` |
+| `brain_account` MCP tool | `enable_email`, `request_email`, `check_alias`, `request_alias`, `status`, `remove_email` |
+| Vanity alias system | Availability check, validation, reserved words, claim flow |
+| Confirmation email sending | MailChannels integration, SPF/DKIM DNS records |
+| Email Worker handler | Routing, sender verification, confirmation reply matching, MIME parsing, save |
+| Email rate limiting | Per-sender and per-installation daily limits |
+
+Email is the most architecturally interesting modality — it touches D1 schema, MCP tools, Worker email handler, and outbound email. Building it first establishes patterns that clip reuses.
+
+### Phase 2: Web Clipping (Sessions 4-5)
+
+| Deliverable | Description |
+|-------------|-------------|
+| `/api/clip` endpoint | JSON API for saving URLs + text to inbox |
+| `/clip` popup page | HTML page served by Worker for bookmarklet popup |
+| Cookie-based auth | Set `brainstem_session` cookie during OAuth, check in `/clip` |
+| Content extraction | `linkedom` + Readability.js + Turndown pipeline |
+| Bookmarklet generator | Page on brainstem.cc that shows the user their bookmarklet |
+| iOS Shortcut | `.shortcut` file + iCloud distribution link |
+
+### Phase 3: Polish (Session 6)
+
+| Deliverable | Description |
+|-------------|-------------|
+| PWA Share Target | `manifest.json`, service worker, Android share sheet |
+| Multi-brain picker | Brain selection in `/clip` popup for multi-installation users |
+| Bookmarklet settings page | Show brainstem address, bookmarklet, shortcut link |
+
+### Deferred
+
+| Item | Reason |
+|------|--------|
+| X Bookmarks | $200/month API cost, polling complexity, 800-bookmark ceiling |
+| Browser extension | High effort (multi-platform review), bookmarklet covers 90% |
+
+**X Bookmarks**: Users can save individual tweets via the bookmarklet/share sheet. Revisit if X ships affordable API pricing.
 
 ---
 
@@ -479,14 +512,19 @@ All four are pure JS and known to work in Cloudflare Workers.
 
 ---
 
+## Resolved Decisions
+
+1. **Vanity aliases in v1**: Yes — first-class from launch, not a bolt-on. Availability check via `check_alias` action.
+2. **Alias rules**: First-come-first-served, 1 vanity alias per installation (v1), reserved words enforced, 3-30 chars lowercase alphanumeric + hyphens/dots.
+3. **Email rate limiting**: Yes — 50/day per sender, 200/day per installation, enforced via `email_log` count.
+4. **Cookie vs. token**: Dual-mode. Cookie (`brainstem_session`) for browser-based flows, bearer token for API/Shortcut. Both resolve to same session table.
+5. **Multi-brain default**: `users.default_installation_id` column. Null = oldest installation. Settable via `brain_account` tool.
+
 ## Open Questions
 
-1. **Multi-brain users**: Should the bookmarklet default to the most recently used brain, or always show a picker?
-2. **Content extraction depth**: Should we extract full articles by default, or just save the URL + title + selected text? Full extraction is more useful but adds latency and complexity.
-3. **Cookie vs. token unification**: The MCP server uses bearer tokens; the bookmarklet would use cookies. Should we unify (set a cookie during OAuth that maps to the existing session)?
-4. **Shortcut distribution**: How to handle token rotation in iOS Shortcuts? If the session expires, the user has to manually update the shortcut.
-5. **Extracted content format**: Save as a single markdown file with metadata (URL, author, date) in frontmatter? Or save URL and content separately?
-6. **Email rate limiting**: Even with sender verification, a compromised sender account could flood the inbox. Should we rate-limit per sender (e.g., 50 emails/day)?
-7. **MailChannels availability**: MailChannels free-for-Workers was intermittently restricted in 2024. Verify current status before depending on it. Alternative: Cloudflare's Email Sending Workers (if available), or SES/Resend for transactional sends.
-8. **Vanity alias collisions**: First-come-first-served? Allow releasing aliases? Namespace concerns (e.g., `brain`, `admin`, `support` should be reserved)?
-9. **Confirmation UX for non-reply clients**: Some email clients make replying to specific messages awkward. Should we also support clicking a confirmation link as a fallback?
+1. **Content extraction depth**: Should we extract full articles by default, or just save the URL + title + selected text? Full extraction is more useful but adds latency (~2-5s) and Worker CPU time.
+2. **Extracted content format**: Markdown with YAML frontmatter (URL, author, date, source) seems right. Confirm format before building.
+3. **MailChannels availability**: Verify current free-for-Workers status before depending on it. Backup: Resend ($0 for <100 emails/day), or Cloudflare's own Email Sending Workers if available.
+4. **Confirmation UX for non-reply clients**: Some email clients make replying awkward. Consider including a magic link in the confirmation email as a fallback (adds one HTTP endpoint).
+5. **Shortcut token rotation**: iOS Shortcuts store the bearer token. If the session expires (1 year), the user must manually update. Consider: could the shortcut auto-refresh by hitting an endpoint?
+6. **Alias reclamation**: Should inactive vanity aliases be reclaimed after N months? Not urgent for v1 but worth deciding before the namespace fills up.
