@@ -117,12 +117,101 @@ Worker email() handler:
      a. Extract From address
      b. Lookup in verified_senders for this installation
      c. If not confirmed → bounce or drop
-  4. Parse MIME body with postal-mime (npm package)
-  5. Extract subject → inbox title, body → content
-  6. Write to R2 at brains/{uuid}/inbox/{timestamp}-{sanitized-subject}.md
-  7. Commit to GitHub repo (same as brain_inbox_save)
-  8. Trigger AI Search reindex
+  4. Check rate limits (50/sender/day, 200/installation/day)
+  5. Parse MIME body with postal-mime
+  6. Transform email → markdown inbox note (see below)
+  7. Save via shared saveToInbox() → R2 + GitHub + reindex
+  8. Log to email_log
 ```
+
+### Email → Inbox Note Transformation
+
+This is the core of the feature: turning a raw email into a useful markdown note in the brain.
+
+**MIME parsing** with `postal-mime`:
+
+| Email Field | Extraction |
+|-------------|------------|
+| `subject` | → note title (sanitized for filename) |
+| `text` (plain text body) | → note content (preferred source) |
+| `html` (HTML body) | → fallback: convert to markdown with Turndown |
+| `from` | → frontmatter metadata |
+| `date` | → frontmatter metadata |
+| `attachments` | → ignored in v1 (future: store in R2) |
+
+**Body selection priority:**
+1. If `text` (plain text) exists → use it directly
+2. If only `html` exists → convert to markdown via Turndown (strip signatures, nav, footers)
+3. If neither → save with just the frontmatter and subject as content
+
+**What the saved note looks like:**
+
+A forwarded newsletter from a verified sender produces:
+
+```markdown
+---
+source: email
+from: newsletter@example.com
+date: 2026-02-09T14:30:00Z
+subject: "Weekly Digest: Top 10 Things"
+---
+
+# Weekly Digest: Top 10 Things
+
+The full email body appears here as markdown.
+
+Links are preserved as [markdown links](https://example.com).
+Images are referenced but not downloaded in v1.
+
+## Section headers from the email
+
+Content continues...
+```
+
+A quick note-to-self (plain text, no formatting):
+
+```markdown
+---
+source: email
+from: dan@gmail.com
+date: 2026-02-09T08:15:00Z
+subject: "Remember to call the dentist"
+---
+
+Remember to call the dentist
+
+Also pick up milk on the way home.
+```
+
+**File path generation** — same pattern as `brain_inbox_save`:
+
+```
+inbox/{timestamp}-{sanitized-subject}.md
+
+Example: inbox/2026-02-09T14-30-00-weekly-digest-top-10-things.md
+```
+
+**Save pipeline** — calls the shared `saveToInbox()` function (extracted from `brain_inbox_save`):
+1. Write markdown to R2 at `brains/{uuid}/inbox/{file}.md`
+2. Commit to GitHub repo via Contents API
+3. Trigger AI Search reindex
+4. Log result to `email_log` with the inbox path
+
+This is the exact same pipeline that `brain_inbox_save` uses for MCP-created notes. The only difference is the content source (email body vs. tool parameter) and the frontmatter (includes `from` and `source: email`).
+
+### Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| No subject line | Title defaults to `"(no subject)"`, filename uses timestamp only |
+| Very long subject | Truncated to 80 chars for filename (existing `sanitizeInboxTitle` behavior) |
+| HTML-only email (newsletters) | Turndown converts to markdown; signature blocks stripped if detectable |
+| Multipart with both text + HTML | Prefer plain text body (it's the sender's intended simple version) |
+| Attachments (PDFs, images) | Ignored in v1 — noted in frontmatter as `attachments: [name1, name2]` for awareness |
+| Duplicate subjects | Timestamp in filename prevents collisions |
+| Empty body | Save with frontmatter + subject only (still useful as a reminder) |
+| Forwarded email (Fwd:) | Treat as normal — the forwarded content is the body |
+| Email thread / reply chain | Full quoted text included; no trimming of reply chains in v1 |
 
 ### Sending Confirmation Emails
 
@@ -153,19 +242,6 @@ Claude: [calls brain_account tool]
 - `brainstem.cc` must use Cloudflare DNS (already does)
 - Enabling Email Routing adds MX records automatically
 - **Constraint**: No other email service can be active on the domain simultaneously (no Google Workspace, etc.)
-
-### MIME Parsing
-
-Use `postal-mime` (recommended by Cloudflare):
-
-| Field | Mapping |
-|-------|---------|
-| `subject` | → inbox note title |
-| `text` (plain text body) | → note content (preferred) |
-| `html` (HTML body) | → fallback, convert to markdown with Turndown |
-| `from` | → metadata line at top of note |
-| `date` | → note timestamp |
-| `attachments` | → ignore initially; future: store in R2 |
 
 ### Limits
 
