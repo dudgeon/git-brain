@@ -144,22 +144,14 @@ users ──1:N──▶ sessions
 
 ---
 
-## Cookie-Based Sessions (for `/clip`)
-
-No new table needed. The existing `sessions` table already stores bearer tokens (the session `id` IS the token). For cookie-based auth on the `/clip` endpoint:
-
-- Set an `HttpOnly; Secure; SameSite=Lax` cookie named `brainstem_session` with the session ID as value
-- The `/clip` endpoint checks `Authorization: Bearer ...` first, then falls back to the cookie
-- Cookie is set during the OAuth callback when the user authenticates through the bookmarklet popup
-
-The session resolves to a `user_id`, which resolves to installations. For single-installation users, this is unambiguous. For multi-installation users, we use a `default_installation_id` preference:
+## Users Table Addition
 
 ```sql
 -- Add to existing users table (migration)
 ALTER TABLE users ADD COLUMN default_installation_id TEXT;
 ```
 
-This column is nullable. When null, the system picks the user's first (oldest) installation.
+This column is nullable. When null, the system picks the user's first (oldest) installation. Primarily a forward-looking addition for future modalities (web clipping, share sheet) where the user session doesn't inherently specify which brain to target. For email, routing is always unambiguous (the recipient address maps to one installation).
 
 ---
 

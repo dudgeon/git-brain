@@ -1,6 +1,6 @@
 # Product Backlog
 
-**Last updated:** 2026-02-07
+**Last updated:** 2026-02-09
 
 ---
 
@@ -37,6 +37,14 @@ No way to revoke a bearer token before expiry. A compromised token remains valid
 ---
 
 ## Medium — Product quality
+
+### Web clipping (bookmarklet / share sheet / iOS Shortcut)
+
+Save web pages to the brain inbox from any browser or mobile app. Requires a `/clip` endpoint with server-side content extraction (Readability.js + Turndown), cookie-based auth for the bookmarklet popup, and an iOS Shortcut for mobile share sheet. Separate build from email input. Research and design in [PRD-002 appendix](prd/002-input-modalities.md#appendix-other-modalities-research).
+
+### X (Twitter) Bookmarks sync
+
+Deferred indefinitely. X API Basic tier costs $200/month, has a 15k tweet/month read quota, 800-bookmark ceiling, and is polling-only. Cost/value ratio is poor. Individual tweets can be saved via the bookmarklet (once built). Revisit if X ships affordable API pricing.
 
 ### Link installation to user on setup
 
@@ -157,10 +165,21 @@ Items completed in v4.0-v4.3, for changelog reference:
 
 ---
 
+## In Progress
+
+### Email input (v5.0)
+
+Forward emails to brainstem inbox. MCP-native onboarding via `brain_account` tool, verified sender list, vanity aliases (`dan@brainstem.cc`), Cloudflare Email Routing + MailChannels.
+
+**Docs**: [PRD-002](prd/002-input-modalities.md) | [ERD-001](erd/001-input-modalities.md) | [ADR-008](adr/008-email-input.md) | [Tasks](tasks/002-input-modalities.md)
+
+---
+
 ## Related documents
 
 - [ADR-001: GitHub App](adr/001-github-app.md)
 - [ADR-002: Security Isolation](adr/002-security-isolation.md)
 - [ADR-003: Encryption at Rest](adr/003-encryption-at-rest.md)
 - [ADR-004: MCP Apps UI](adr/004-mcp-apps-ui.md)
+- [ADR-008: Email Input](adr/008-email-input.md)
 - [CLAUDE.md](../CLAUDE.md)

@@ -1,15 +1,15 @@
-# PRD-002: Input Modalities Beyond MCP
+# PRD-002: Email Input
 
 **Status**: Design Complete
 **Date**: 2026-02-09
 **Author**: Research session
-**Related**: [ERD-001](../erd/001-input-modalities.md) | [ADR-008](../adr/008-email-input.md) | [Tasks](../tasks/002-input-modalities.md)
+**Related**: [ERD-001](../erd/001-input-modalities.md) | [ADR-008](../adr/008-email-input.md) | [Tasks](../tasks/002-email-input.md)
 
 ## Problem
 
-Today, the only way to feed content into a brainstem is through the MCP connection (via `brain_inbox` / `brain_inbox_save` tools) or by pushing to the connected GitHub repo. Both require the user to be in a Claude session or at a terminal. There's no way to capture content while browsing the web, reading email, or scrolling X.
+Today, the only way to feed content into a brainstem is through the MCP connection (via `brain_inbox` / `brain_inbox_save` tools) or by pushing to the connected GitHub repo. Both require the user to be in a Claude session or at a terminal. There's no way to capture content while reading email, and no way to quickly forward a newsletter, receipt, or note-to-self into the brain.
 
-This document explores three additional input modalities — all feeding the existing inbox pipeline.
+This document covers email as the first new input modality. Other modalities (bookmarklet, share sheet, X bookmarks) are documented in the [research appendix](#appendix-other-modalities-research) and tracked in the [backlog](../BACKLOG.md) for future builds.
 
 ---
 
@@ -97,7 +97,7 @@ See [ERD-001](../erd/001-input-modalities.md) for the full data model. Summary o
 | `verified_senders` | Authorized sender emails with confirmation state |
 | `email_log` | Inbound email audit trail (last 200 entries) |
 
-Plus one column addition: `users.default_installation_id` for multi-brain `/clip` routing.
+Plus one column addition: `users.default_installation_id` for future multi-brain routing.
 
 ### Implementation Sketch
 
@@ -198,214 +198,7 @@ Estimated: ~300 lines for the email handler, verification flow, and MCP tool.
 
 ---
 
-## 2. X (Twitter) Bookmarks
-
-### API Assessment
-
-The X Bookmarks API exists in API v2 but has significant constraints:
-
-| Factor | Detail |
-|--------|--------|
-| Minimum tier | Basic ($200/month) |
-| Auth | OAuth 2.0 with PKCE (per-user) |
-| Scopes | `bookmark.read`, `tweet.read`, `users.read`, `offline.access` |
-| Hard ceiling | 800 most recent bookmarks only |
-| Rate limit | 180 GET / 15 min per user |
-| Real quota | 15,000 tweet reads/month on Basic |
-| Webhooks | None — polling only |
-| Real-time | Not available |
-
-### The $200/Month Problem
-
-The X API Basic tier costs $200/month with a 15,000-tweet monthly read quota. For a multi-tenant service, this is the binding constraint — not rate limits. If 10 users each poll hourly and get 5 new bookmarks per poll, that's:
-
-```
-10 users × 24 polls/day × 5 tweets × 30 days = 36,000 tweets/month
-```
-
-This exceeds the Basic quota. Pro tier ($5,000/month) would be needed for meaningful multi-tenant use.
-
-### Architecture Options
-
-**Option A: Server-side polling (brainstem polls X on behalf of users)**
-
-```
-User authorizes X OAuth → brainstem stores refresh token
-  → Cron trigger polls GET /2/users/{id}/bookmarks every N minutes
-    → New bookmarks → write to R2 inbox → reindex
-```
-
-- Requires: X API subscription ($200+/month), OAuth consent flow, refresh token storage, cron scheduling
-- Pro: Fully automatic, user does nothing after setup
-- Con: Expensive, quota-constrained, 800-bookmark ceiling
-
-**Option B: Client-side export (user runs a browser extension/script)**
-
-User installs the open-source [Twitter Web Exporter](https://github.com/prinsss/twitter-web-exporter) UserScript, exports bookmarks as JSON/Markdown, then uploads via bookmarklet or email.
-
-- Pro: Free, no API key needed, no 800-bookmark limit (intercepts web app's GraphQL)
-- Con: Manual, requires user action, brittle (X can break it)
-
-**Option C: iOS Shortcut or bookmarklet for individual tweets**
-
-Instead of syncing all bookmarks, let users save individual tweets via the share sheet or bookmarklet (covered in Section 3).
-
-### Recommendation: Defer
-
-X Bookmarks integration is **not worth building now**:
-
-1. **$200/month minimum** for API access is disproportionate to the value
-2. **Polling-only** means infrastructure complexity (cron, token refresh, dedup)
-3. **800-bookmark ceiling** means you can never get a full export
-4. **X API instability** — pricing has doubled once already, terms change frequently
-5. The user can accomplish 80% of the value by sharing individual tweets via the bookmarklet/share sheet (Section 3)
-
-If demand materializes, revisit when X ships pay-per-use pricing (currently in closed beta) or if a reliable free alternative emerges.
-
-### What to Build Instead
-
-A generic "save this URL" input (bookmarklet/share sheet) that works for X tweets, articles, or any web page. The user taps share on a tweet → it goes to brainstem inbox with the tweet content extracted server-side.
-
----
-
-## 3. Bookmarklet / Share Sheet
-
-### Strategy: Three Surfaces, One Endpoint
-
-Build a single `/clip` endpoint on brainstem.cc that accepts `{ url, title, text, token }` and saves to the inbox. Then expose it through three progressively richer surfaces:
-
-| Surface | Platform | Auth | Effort |
-|---------|----------|------|--------|
-| **Bookmarklet** | All desktop browsers | Cookie (OAuth) | Low |
-| **PWA Share Target** | Android Chrome | Cookie (OAuth) | Low |
-| **iOS Shortcut** | iOS (all apps) | Bearer token in shortcut | Low |
-
-### 3a. Bookmarklet (Desktop)
-
-**Pattern**: Popup window (same approach as Pinboard, Instapaper, Pocket).
-
-The bookmarklet captures metadata from the current page and opens a popup to brainstem.cc:
-
-```javascript
-javascript:void(function(){
-  var t=encodeURIComponent(document.title);
-  var u=encodeURIComponent(location.href);
-  var s=encodeURIComponent(window.getSelection().toString().substring(0,2000));
-  window.open(
-    'https://brainstem.cc/clip?title='+t+'&url='+u+'&text='+s,
-    'brainstem','width=550,height=420'
-  );
-}())
-```
-
-**Why popup, not direct fetch**: A direct `fetch()` from the bookmarklet to brainstem.cc faces CORS issues and CSP blocking on many sites. The popup window approach is immune to both — it opens a brainstem.cc page (same origin), which can freely call brainstem.cc APIs.
-
-**Auth**: Cookie-based. First use redirects through GitHub OAuth, sets a session cookie on brainstem.cc. Subsequent uses are instant — cookie is sent with the popup page load.
-
-**The popup page** (`/clip`):
-
-1. Check session cookie → if missing, redirect to OAuth → come back
-2. If `url` param is present, fetch the URL server-side and extract article content
-3. Show preview: title, extracted content (editable), Save/Cancel buttons
-4. On save: POST to `/api/clip` → writes to R2 + GitHub (reuses `brain_inbox_save` logic)
-5. Show confirmation, auto-close after 2 seconds
-
-**Content extraction pipeline** (server-side):
-
-```
-URL → fetch() → HTML
-  → linkedom (lightweight DOM parser, works in Workers)
-    → Readability.js (extract article content)
-      → Turndown (HTML → Markdown)
-        → Save as inbox note
-```
-
-This is the same pipeline used by every read-later service. `linkedom` is the right choice for Workers (JSDOM is too heavy).
-
-### 3b. PWA Share Target (Android)
-
-Add a `manifest.json` to brainstem.cc:
-
-```json
-{
-  "name": "Brainstem",
-  "short_name": "Brainstem",
-  "start_url": "/clip",
-  "display": "standalone",
-  "share_target": {
-    "action": "/clip",
-    "method": "POST",
-    "enctype": "multipart/form-data",
-    "params": {
-      "title": "title",
-      "text": "text",
-      "url": "url"
-    }
-  }
-}
-```
-
-When the user shares a URL from any Android app, "Brainstem" appears in the share sheet. The shared data POSTs to `/clip`, which runs the same save pipeline.
-
-**Requirements**: User must "install" the PWA (Add to Home Screen in Chrome). A minimal service worker must be registered.
-
-**Platform gap**: iOS Safari does **not** support Web Share Target API. Apple has shown no intent to implement it (WebKit bug open since 2019).
-
-### 3c. iOS Shortcut (Share Sheet)
-
-Since Web Share Target doesn't work on iOS, an Apple Shortcut fills the gap:
-
-1. Triggered from the share sheet (any app)
-2. Extracts the shared URL
-3. POSTs to `https://brainstem.cc/api/clip` with bearer token
-4. Shows a notification on success
-
-**Distribution**: Provide an iCloud link on the brainstem.cc settings page. User taps to install, enters their bearer token once.
-
-**Limitation**: The user must manually paste their bearer token into the shortcut. There's no OAuth flow in Shortcuts (though you could build a helper page that copies the token to clipboard).
-
-### The `/clip` Endpoint
-
-A single new HTTP route that all three surfaces hit:
-
-```
-POST /api/clip
-  Authorization: Bearer <token> OR session cookie
-  Content-Type: application/json
-
-  {
-    "url": "https://example.com/article",     // required
-    "title": "Article Title",                  // optional (extracted if missing)
-    "text": "Selected text or note",           // optional
-    "extract": true                            // optional: fetch URL and extract article
-  }
-
-Response:
-  {
-    "success": true,
-    "path": "inbox/2026-02-09T14-30-45-article-title.md",
-    "r2": true,
-    "github": true
-  }
-```
-
-When `extract` is true (or when `url` is present without `text`), the Worker fetches the URL, runs Readability.js, converts to Markdown, and saves the result. When `text` is provided, it saves that directly with the URL as a reference link.
-
-### Authentication: Dual Mode
-
-The `/clip` endpoint accepts either:
-- **Bearer token** in `Authorization` header (for API clients, iOS Shortcut)
-- **Session cookie** (for bookmarklet popup, PWA share target)
-
-Both resolve to the same session/user/installation. The cookie is set during the OAuth flow on brainstem.cc. The existing session table and auth logic can be reused.
-
-**New requirement**: A user may have multiple installations. The clip page needs to either:
-- Default to the user's first/only installation
-- Let the user pick which brain to save to (if they have multiple)
-
----
-
-## Tenancy Considerations
+## Tenancy
 
 ### Current Model
 
@@ -415,47 +208,42 @@ User → has sessions (bearer tokens)
          → each installation = 1 GitHub repo = 1 R2 prefix = 1 brain
 ```
 
-### Impact of New Input Modalities
+### Email Tenant Resolution
 
 | Modality | Tenant Resolution | Sender Auth |
 |----------|-------------------|-------------|
 | **MCP** (existing) | UUID in URL path `/mcp/{uuid}` | Bearer token |
 | **Email** | UUID in sub-address or alias lookup | Verified sender list |
-| **Bookmarklet** | Session cookie → user → default installation | Cookie (OAuth) |
-| **PWA Share Target** | Session cookie → user → default installation | Cookie (OAuth) |
-| **iOS Shortcut** | Bearer token → user → installation | Bearer token |
 
-**For single-installation users** (the common case today), all modalities resolve unambiguously. The user has one brain, and all inputs go there.
-
-**For multi-installation users**, we need a "default brain" concept or a selection UI. Options:
-- Add a `default_installation_id` column to the `users` table
-- In the bookmarklet popup, show a brain picker dropdown
-- In email, the UUID in the address is explicit — no ambiguity
-- For iOS Shortcut, the bearer token maps to a user, not an installation — we'd need a separate setting or a per-installation token
+Email routing is unambiguous — the recipient address maps directly to one installation. No "default brain" concept needed for this build.
 
 ### Shared Infrastructure
 
-All three new modalities feed into the same pipeline:
+Email feeds into the same inbox pipeline as MCP:
 
 ```
-Input → authenticate → resolve installation → save to inbox
-                                                  ↓
-                                        R2: brains/{uuid}/inbox/{file}.md
-                                        GitHub: create file via Contents API
-                                        AI Search: trigger reindex
+Inbound email → verify sender → resolve installation → save to inbox
+                                                           ↓
+                                                 R2: brains/{uuid}/inbox/{file}.md
+                                                 GitHub: create file via Contents API
+                                                 AI Search: trigger reindex
 ```
 
-The `brain_inbox_save` tool's internal logic should be extracted into a shared function that all modalities call.
+The `brain_inbox_save` tool's internal logic should be extracted into a shared `saveToInbox()` function that both MCP and email call.
 
 ---
 
-## Implementation Phases
+## Build Plan
 
-See [TASKS-002](../tasks/002-input-modalities.md) for the full task breakdown.
+See [TASKS-002](../tasks/002-email-input.md) for the full task breakdown (3 sessions).
 
-### Phase 1: Foundation + Email (Sessions 1-3)
+| Session | Goal |
+|---------|------|
+| **1** | D1 tables, shared `saveToInbox()`, `brain_account` MCP tool with alias validation |
+| **2** | MailChannels outbound, confirmation flow, email Worker handler (routing + confirmation matching) |
+| **3** | MIME parsing, inbound save pipeline, rate limiting, e2e test, docs |
 
-Build the shared infrastructure that all modalities need, then email end-to-end.
+### Deliverables
 
 | Deliverable | Description |
 |-------------|-------------|
@@ -467,36 +255,6 @@ Build the shared infrastructure that all modalities need, then email end-to-end.
 | Email Worker handler | Routing, sender verification, confirmation reply matching, MIME parsing, save |
 | Email rate limiting | Per-sender and per-installation daily limits |
 
-Email is the most architecturally interesting modality — it touches D1 schema, MCP tools, Worker email handler, and outbound email. Building it first establishes patterns that clip reuses.
-
-### Phase 2: Web Clipping (Sessions 4-5)
-
-| Deliverable | Description |
-|-------------|-------------|
-| `/api/clip` endpoint | JSON API for saving URLs + text to inbox |
-| `/clip` popup page | HTML page served by Worker for bookmarklet popup |
-| Cookie-based auth | Set `brainstem_session` cookie during OAuth, check in `/clip` |
-| Content extraction | `linkedom` + Readability.js + Turndown pipeline |
-| Bookmarklet generator | Page on brainstem.cc that shows the user their bookmarklet |
-| iOS Shortcut | `.shortcut` file + iCloud distribution link |
-
-### Phase 3: Polish (Session 6)
-
-| Deliverable | Description |
-|-------------|-------------|
-| PWA Share Target | `manifest.json`, service worker, Android share sheet |
-| Multi-brain picker | Brain selection in `/clip` popup for multi-installation users |
-| Bookmarklet settings page | Show brainstem address, bookmarklet, shortcut link |
-
-### Deferred
-
-| Item | Reason |
-|------|--------|
-| X Bookmarks | $200/month API cost, polling complexity, 800-bookmark ceiling |
-| Browser extension | High effort (multi-platform review), bookmarklet covers 90% |
-
-**X Bookmarks**: Users can save individual tweets via the bookmarklet/share sheet. Revisit if X ships affordable API pricing.
-
 ---
 
 ## New Dependencies
@@ -504,11 +262,7 @@ Email is the most architecturally interesting modality — it touches D1 schema,
 | Package | Purpose | Size | Workers Compatible |
 |---------|---------|------|--------------------|
 | `postal-mime` | MIME email parsing | ~15KB | Yes (recommended by Cloudflare) |
-| `linkedom` | Lightweight DOM parser | ~50KB | Yes |
-| `@mozilla/readability` | Article content extraction | ~30KB | Yes (needs DOM) |
 | `turndown` | HTML → Markdown conversion | ~20KB | Yes |
-
-All four are pure JS and known to work in Cloudflare Workers.
 
 ---
 
@@ -517,14 +271,32 @@ All four are pure JS and known to work in Cloudflare Workers.
 1. **Vanity aliases in v1**: Yes — first-class from launch, not a bolt-on. Availability check via `check_alias` action.
 2. **Alias rules**: First-come-first-served, 1 vanity alias per installation (v1), reserved words enforced, 3-30 chars lowercase alphanumeric + hyphens/dots.
 3. **Email rate limiting**: Yes — 50/day per sender, 200/day per installation, enforced via `email_log` count.
-4. **Cookie vs. token**: Dual-mode. Cookie (`brainstem_session`) for browser-based flows, bearer token for API/Shortcut. Both resolve to same session table.
-5. **Multi-brain default**: `users.default_installation_id` column. Null = oldest installation. Settable via `brain_account` tool.
+4. **Email-only scope**: Web clipping (bookmarklet, share sheet, iOS Shortcut) is a separate future build. See [backlog](../BACKLOG.md).
 
 ## Open Questions
 
-1. **Content extraction depth**: Should we extract full articles by default, or just save the URL + title + selected text? Full extraction is more useful but adds latency (~2-5s) and Worker CPU time.
-2. **Extracted content format**: Markdown with YAML frontmatter (URL, author, date, source) seems right. Confirm format before building.
-3. **MailChannels availability**: Verify current free-for-Workers status before depending on it. Backup: Resend ($0 for <100 emails/day), or Cloudflare's own Email Sending Workers if available.
-4. **Confirmation UX for non-reply clients**: Some email clients make replying awkward. Consider including a magic link in the confirmation email as a fallback (adds one HTTP endpoint).
-5. **Shortcut token rotation**: iOS Shortcuts store the bearer token. If the session expires (1 year), the user must manually update. Consider: could the shortcut auto-refresh by hitting an endpoint?
-6. **Alias reclamation**: Should inactive vanity aliases be reclaimed after N months? Not urgent for v1 but worth deciding before the namespace fills up.
+1. **MailChannels availability**: Verify current free-for-Workers status before depending on it. Backup: Resend ($0 for <100 emails/day), or Cloudflare's own Email Sending Workers if available.
+2. **Confirmation UX for non-reply clients**: Some email clients make replying awkward. Consider including a magic link in the confirmation email as a fallback (adds one HTTP endpoint).
+3. **Alias reclamation**: Should inactive vanity aliases be reclaimed after N months? Not urgent for v1 but worth deciding before the namespace fills up.
+
+---
+
+## Appendix: Other Modalities (Research)
+
+The following modalities were researched alongside email but are **out of scope for this build**. They are tracked in the [backlog](../BACKLOG.md) as separate future work.
+
+### Web Clipping (Bookmarklet / Share Sheet / iOS Shortcut)
+
+Build a `/clip` endpoint that accepts `{ url, title, text }` and saves to the inbox with optional server-side article extraction (Readability.js + Turndown). Three surfaces:
+
+- **Bookmarklet**: Popup window pattern (like Pinboard). Cookie-based auth. Works on all desktop browsers.
+- **PWA Share Target**: `manifest.json` with `share_target`. Android only (iOS doesn't support Web Share Target API).
+- **iOS Shortcut**: Apple Shortcut with share sheet trigger, POSTs to `/api/clip` with bearer token.
+
+Content extraction pipeline: `fetch URL → linkedom → Readability.js → Turndown → markdown`
+
+Additional dependencies: `linkedom`, `@mozilla/readability`
+
+### X (Twitter) Bookmarks
+
+**Deferred.** X API Basic tier costs $200/month with a 15,000 tweet/month read quota and 800-bookmark ceiling. Polling-only (no webhooks). The cost/value ratio is poor. Users can save individual tweets via the bookmarklet/share sheet instead.

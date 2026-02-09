@@ -1,15 +1,13 @@
-# Tasks: Input Modalities Build Plan
+# Tasks: Email Input Build Plan
 
 **Related**: [PRD-002](../prd/002-input-modalities.md), [ERD-001](../erd/001-input-modalities.md), [ADR-008](../adr/008-email-input.md)
 **Last updated**: 2026-02-09
 
-This is a multi-session build. Each session should complete one or more numbered groups. Tasks within a group can often be parallelized; groups should be completed in order.
+This is a 3-session build. Each session should complete one numbered group. Tasks within a group can often be parallelized; groups should be completed in order.
 
 ---
 
-## Phase 1: Foundation + Email
-
-### Session 1: Schema, Shared Infra, brain_account Tool
+## Session 1: Schema, Shared Infra, brain_account Tool
 
 **Goal**: D1 tables exist, inbox save logic is shared, `brain_account` tool responds to all actions (email sending stubbed).
 
@@ -48,7 +46,7 @@ This is a multi-session build. Each session should complete one or more numbered
 
 ---
 
-### Session 2: Outbound Email + Confirmation Flow
+## Session 2: Outbound Email + Confirmation Flow
 
 **Goal**: `brain_account({ action: "request_email" })` sends a real confirmation email. Reply-based confirmation works end-to-end.
 
@@ -91,7 +89,7 @@ This is a multi-session build. Each session should complete one or more numbered
 
 ---
 
-### Session 3: Inbound Email Processing
+## Session 3: Inbound Email Processing
 
 **Goal**: Forwarded emails arrive in the brain inbox (R2 + GitHub). Rate limiting works.
 
@@ -134,138 +132,18 @@ This is a multi-session build. Each session should complete one or more numbered
 
 ---
 
-## Phase 2: Web Clipping
-
-### Session 4: `/clip` API + Content Extraction
-
-**Goal**: `POST /api/clip` saves a URL to the inbox with extracted article content.
-
-- [ ] **4.1** Content extraction pipeline
-  - `npm install linkedom @mozilla/readability turndown` (turndown may already be installed from 3.1)
-  - Create `src/extract.ts` with `extractArticle(url): Promise<{ title, content, byline?, excerpt? }>`
-  - Fetch URL → parse with linkedom → Readability.js → Turndown → markdown
-  - Handle errors gracefully (timeouts, non-HTML responses, empty extractions)
-  - Unit test with sample HTML fixtures
-
-- [ ] **4.2** `/api/clip` POST endpoint
-  - Accept JSON: `{ url, title?, text?, extract? }`
-  - Auth: bearer token (header) or session cookie
-  - Resolve user → installation (use `default_installation_id` or first installation)
-  - If `extract: true` or `url` without `text`: run extraction pipeline
-  - Format as markdown with YAML frontmatter: `url`, `title`, `date`, `source: clip`
-  - Call `saveToInbox()`
-  - Return `{ success, path, r2, github }`
-
-- [ ] **4.3** Cookie-based auth for browser flows
-  - On OAuth callback: set `brainstem_session={session_id}` cookie (`HttpOnly; Secure; SameSite=Lax`)
-  - In auth middleware: check `Authorization: Bearer` first, fall back to `brainstem_session` cookie
-  - Cookie has same expiry as session (1 year)
-
-- [ ] **4.4** CORS headers for `/api/clip`
-  - Handle OPTIONS preflight
-  - `Access-Control-Allow-Origin: https://brainstem.cc` (only own origin needed for popup)
-  - `Access-Control-Allow-Methods: POST, OPTIONS`
-  - `Access-Control-Allow-Headers: Authorization, Content-Type`
-
-- [ ] **4.5** Unit + integration tests
-  - Content extraction with various HTML structures
-  - `/api/clip` with bearer token auth
-  - `/api/clip` with cookie auth
-  - Error cases: invalid URL, extraction failure, unauthorized
-
-**Verification**: `curl -X POST https://brainstem.cc/api/clip -H "Authorization: Bearer ..." -d '{"url":"...","extract":true}'` saves extracted article to inbox.
-
----
-
-### Session 5: Bookmarklet + iOS Shortcut
-
-**Goal**: User can clip web pages from desktop browser and iOS share sheet.
-
-- [ ] **5.1** `/clip` popup page (GET)
-  - HTML page served by Worker at `GET /clip?url=...&title=...&text=...`
-  - Check session cookie → if missing, redirect to OAuth (with `redirect_uri=/clip?...`)
-  - Show: title (editable), extracted preview (loading state → content), Save/Cancel buttons
-  - On save: `fetch('/api/clip', { method: 'POST', ... })` with cookie auth
-  - On success: show confirmation, auto-close after 2s
-  - Minimal, clean UI consistent with brainstem.cc design language
-
-- [ ] **5.2** Bookmarklet code
-  - Generate per-user bookmarklet on a brainstem.cc page (e.g., `/tools` or `/settings`)
-  - Bookmarklet captures `document.title`, `location.href`, `getSelection().toString()`
-  - Opens `window.open('https://brainstem.cc/clip?url=...&title=...&text=...')`
-  - Show drag-to-bookmarks-bar instruction
-
-- [ ] **5.3** iOS Shortcut
-  - Create Apple Shortcut that:
-    1. Accepts share sheet input (URL)
-    2. Calls `POST https://brainstem.cc/api/clip` with bearer token
-    3. Shows notification on success/failure
-  - Host `.shortcut` file or provide iCloud link
-  - Document setup: "Open link → install shortcut → paste bearer token"
-
-- [ ] **5.4** OAuth redirect-back for bookmarklet
-  - When `/clip` redirects to OAuth, store the original `/clip?url=...` URL
-  - After OAuth completes, redirect back to `/clip` with params intact
-  - User sees the clip popup with their content, ready to save
-
-- [ ] **5.5** Bookmarklet/Shortcut setup via MCP
-  - Add `brain_account({ action: "get_clip_tools" })` that returns:
-    - Bookmarklet JavaScript code
-    - iOS Shortcut install link
-    - Brainstem address (for email, as a bonus)
-  - Claude can proactively offer these when the user asks about saving web content
-
-**Verification**: Bookmarklet works from Chrome/Safari on a test page. iOS Shortcut saves a shared URL to inbox.
-
----
-
-## Phase 3: Polish
-
-### Session 6: PWA + Multi-Brain + Settings
-
-- [ ] **6.1** PWA Share Target (Android)
-  - Serve `/manifest.json` with `share_target` config
-  - Register minimal service worker at `/sw.js`
-  - Handle POST to `/clip` from share sheet (multipart/form-data)
-  - Test on Chrome Android
-
-- [ ] **6.2** Multi-brain picker in `/clip` popup
-  - If user has multiple installations, show dropdown in clip popup
-  - Default to `default_installation_id` or first installation
-  - Remember last selection in localStorage
-
-- [ ] **6.3** Tools/settings page on brainstem.cc
-  - New page at `/tools` showing:
-    - Brainstem email address(es)
-    - Verified senders list
-    - Bookmarklet (drag to bar)
-    - iOS Shortcut install link
-    - MCP connection config
-  - Auth-gated (session cookie)
-
-- [ ] **6.4** Update homepage and content.md
-  - Add email + clip to feature list on brainstem.cc homepage
-  - Update `site/content.md` to match
-
----
-
 ## Cross-Cutting Concerns
 
-These apply across all phases:
-
 - [ ] **C.1** Shared `saveToInbox()` must trigger AI Search reindex after save
-- [ ] **C.2** All new endpoints need auth (bearer or cookie) — no unauthenticated writes
+- [ ] **C.2** Email handler must not throw — all errors logged to `email_log`, never crash the Worker
 - [ ] **C.3** All new D1 writes need error handling (constraint violations, connection errors)
-- [ ] **C.4** Email handler must not throw — all errors logged to `email_log`, never crash the Worker
-- [ ] **C.5** Content extraction must have a timeout (5s) — don't let slow sites block the Worker
-- [ ] **C.6** YAML frontmatter format should be consistent across email and clip sources:
+- [ ] **C.4** YAML frontmatter format for email-sourced notes:
   ```yaml
   ---
-  source: email | clip | mcp
-  url: https://... (clip only)
-  from: dan@gmail.com (email only)
+  source: email
+  from: dan@gmail.com
   date: 2026-02-09T14:30:00Z
-  title: The note title
+  subject: The email subject
   ---
   ```
 
@@ -273,23 +151,19 @@ These apply across all phases:
 
 ## Dependency Install Summary
 
-| Package | Phase | Purpose |
-|---------|-------|---------|
-| `postal-mime` | 1 (Session 3) | MIME email parsing |
-| `turndown` | 1 (Session 3) | HTML → Markdown (email + clip) |
-| `linkedom` | 2 (Session 4) | Lightweight DOM parser for Readability |
-| `@mozilla/readability` | 2 (Session 4) | Article content extraction |
+| Package | Session | Purpose |
+|---------|---------|---------|
+| `postal-mime` | 3 | MIME email parsing |
+| `turndown` | 3 | HTML → Markdown (for HTML-only emails) |
 
 ---
 
 ## Manual Steps Checklist
 
-These require human action (Cloudflare dashboard, DNS, Apple):
+These require human action (Cloudflare dashboard, DNS):
 
 - [ ] Enable Cloudflare Email Routing for brainstem.cc (Session 2)
 - [ ] Add SPF DNS record for MailChannels (Session 2)
 - [ ] Add DKIM DNS record for MailChannels (Session 2)
 - [ ] Add DMARC DNS record (Session 2)
 - [ ] Verify MailChannels free-for-Workers still works (Session 2 — before committing to it)
-- [ ] Create and test iOS Shortcut in Shortcuts app (Session 5)
-- [ ] Upload Shortcut to iCloud for distribution (Session 5)
