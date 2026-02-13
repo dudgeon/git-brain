@@ -504,10 +504,10 @@ CREATE TABLE email_log (
 1. User visits `/setup` → installs the GitHub App on their repo
 2. GitHub redirects to `/setup/callback` with `installation_id`
 3. Callback creates D1 installation record, then triggers background sync via `ctx.waitUntil()`
-4. Background sync: `syncRepo` fetches the entire repo tree (Git Trees API — 1 API call), downloads each text file (Git Blobs API), writes to R2 at `brains/{uuid}/`, generates `_brain_summary.json`, triggers AI Search reindex
+4. Background sync: `syncRepo` downloads the entire repo as a gzip tarball (1 subrequest), filters and extracts text files in-memory, writes to R2 at `brains/{uuid}/`, generates `_brain_summary.json`, triggers AI Search reindex
 5. User authenticates via OAuth → session created → MCP tools available
 
-**Key functions:** `handleSetupCallback` → `syncRepo` → `fetchRepoTree` / `fetchBlobContent` → `generateBrainSummary` → `triggerAISearchReindex`
+**Key functions:** `handleSetupCallback` → `syncRepo` → `fetchRepoTarballFiles` → `generateBrainSummary` → `triggerAISearchReindex`
 
 ### Incremental Sync (Ongoing)
 
@@ -516,7 +516,7 @@ CREATE TABLE email_log (
 3. `syncChangedFiles` fetches each changed file via GitHub Contents API, writes to R2
 4. AI Search reindex triggered automatically
 
-**Note:** Deleted files are not yet handled — see backlog.
+**Note:** Deleted files are synced — `extractChangedFiles` returns both changed and removed files. `syncChangedFiles` deletes removed files from R2 and regenerates the brain summary.
 
 ### Account Deletion (Offboarding)
 
