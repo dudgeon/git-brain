@@ -95,6 +95,10 @@ Fixed: `syncChangedFiles` now regenerates `_brain_summary.json` after any file c
 
 ## Low — Polish
 
+### Latent Turndown bug in email handler
+
+`emailToMarkdown()` in `src/email.ts:186-191` calls `turndown.turndown(email.html)` which requires browser DOM (`document`). Workers don't have `document`, so this will throw `document not defined` for HTML-only emails (no plaintext body). Currently latent because `email.text` path wins for all tested emails. **Fix:** Either strip HTML tags with a simple regex for email (acceptable quality), or use a DOM-less HTML parser.
+
 ### GitHub URL parsing in `get_document`
 
 The `search_brain` tool returns results with full GitHub URLs (e.g., `https://github.com/owner/repo/blob/main/path/to/file.md`) via the `getSourceUrl()` helper (src/index.ts:288-295). However, `get_document` only accepts file paths (src/index.ts:387), not URLs.

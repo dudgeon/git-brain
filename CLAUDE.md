@@ -48,6 +48,12 @@ Instead, clearly state what you're blocked on and what you need from the user.
 
 **Design tool metadata for semantic understanding:** When writing MCP tool descriptions, focus on *why* Claude should use the tool (semantic categories), not just trigger phrases. Good: "Use for information about the user unlikely to be in training data or public sources." Bad: "Use when user says 'search the brain'." Semantic descriptions generalize; phrase matching is brittle.
 
+**No browser DOM in Workers:** Cloudflare Workers do not have `document`, `window`, or any browser DOM APIs. Libraries that parse HTML via `document.createElement` (Turndown, JSDOM, Readability, etc.) will throw `document not defined` at runtime. When a feature needs HTML→markdown or HTML parsing, always run the conversion client-side (bookmarklet, browser extension, frontend) and send the result to the Worker. Never add DOM-dependent logic to server-side Worker code.
+
+**CORS-safe error handling for cross-origin endpoints:** Any Worker route called from cross-origin JavaScript (bookmarklets, browser extensions, external frontends) MUST wrap the entire handler in try/catch. An uncaught exception causes the Worker runtime to return a bare 500 without CORS headers — browsers can't read the error, so users see an opaque "Failed to fetch" instead of the real message. The catch block must return a Response with CORS headers (`Access-Control-Allow-Origin`, etc.) so the actual error propagates to the caller.
+
+**Bookmarklet build hygiene:** Vite IIFE output ends with `})();`. When wrapping in `javascript:void(...)`, the trailing semicolon inside the parens is a syntax error. Always `.trim().replace(/;$/, '')` on the IIFE string before URI-encoding. Test bookmarklets on real pages (not just localhost) — CSP, CORS, and encoding issues only surface in production contexts.
+
 ## Architecture
 
 ```
@@ -587,6 +593,12 @@ Both call `deleteInstallation(env, installationUuid)` which:
 
 8. **Claude.ai proxy rejects `structuredContent` and `execution` fields (ADR-009)**: Claude.ai's MCP proxy returned `-32600` for any tool response containing MCP Apps `structuredContent` or SDK-injected `execution: { taskSupport: 'forbidden' }`. Two fixes: (a) switched from `registerAppTool` to standard `server.registerTool()` + conditional upgrade via `RegisteredTool.update()` after client capabilities are known, (b) stripped `execution` field from all tool definitions. Also switched transport from legacy SSE (`serveSSE`) to Streamable HTTP (`HomeBrainMCP.serve("/mcp")`).
 
+9. **Bookmarklet syntax error from IIFE semicolon**: Vite IIFE output ends with `})();`. Wrapping in `javascript:void(...)` put the trailing `;` inside the parens → `SyntaxError: Unexpected token ';'`. Fix: `.trim().replace(/;$/, '')` before `encodeURIComponent`.
+
+10. **Cross-origin "Failed to fetch" hiding real errors**: The `/api/clip` endpoint threw an uncaught exception (Turndown `document not defined`), causing a bare 500 without CORS headers. Browser reported opaque "Failed to fetch" instead of the error. Fix: try/catch wrapper returning CORS-enabled JSON error responses.
+
+11. **Turndown `document not defined` in Workers**: The clip handler called `turndown.turndown(html)` server-side, but Turndown uses `document.createElement` internally. Workers have no browser DOM. Fix: moved HTML→markdown conversion to the bookmarklet (client-side), sending `content` instead of `html` to the API.
+
 ## Connecting to Claude
 
 ### Getting a Token
@@ -744,6 +756,8 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 4. **No application-layer encryption** — User files in R2 are encrypted with Cloudflare-managed keys (AES-256-GCM) but are readable by the platform operator. This was analyzed thoroughly in ADR-003 and is an intentional tradeoff: application-layer encryption is incompatible with AI Search. See `docs/adr/003-encryption-at-rest.md`.
 
 5. **MCP Apps host support** — MCP Apps is an extension spec currently supported in Claude Desktop. Claude.ai web support is TBD. For non-UI hosts, use `brain_inbox_save` directly.
+
+6. **Turndown requires browser DOM** — `emailToMarkdown()` in `src/email.ts` calls Turndown on HTML, which needs `document`. Workers don't have browser DOM. Currently latent (email `text` path wins for all tested emails). The web clipper avoids this by running Turndown client-side in the bookmarklet. See `docs/BACKLOG.md` for fix options.
 
 ## Backlog
 
