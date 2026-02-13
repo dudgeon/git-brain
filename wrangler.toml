@@ -42,3 +42,9 @@ GITHUB_CLIENT_ID = "Iv23liqdmhreJX6G3ku6"
 type = "Data"
 globs = ["**/*.png"]
 fallthrough = false
+
+# Bookmarklet JS imported as text module
+[[rules]]
+type = "Text"
+globs = ["**/bookmarklet.js"]
+fallthrough = true

@@ -22,6 +22,7 @@ import { saveToInbox, ensureEmailTables } from "./inbox";
 import logoPng from "../site/brainstem_logo.png";
 import diagramPng from "../site/brainstem-diagram.png";
 import brainInboxHtml from "../ui/dist/index.html";
+import bookmarkletTemplate from "../ui/dist/bookmarklet.js";
 
 // Environment bindings type
 export interface Env extends GitHubEnv {
@@ -2526,6 +2527,9 @@ function renderOAuthSuccessPage(
 .warning-box { background: #fef3c7; border: 1px solid #fde68a; padding: 0.75rem 1rem; border-radius: 8px; margin: 1rem 0; font-size: 0.875rem; }
 .warning-box strong { color: #92400e; }
 .info-box { background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.75rem 1rem; border-radius: 8px; margin: 1rem 0; font-size: 0.875rem; color: #1e40af; }
+.bookmarklet-link { display: inline-block; padding: 10px 20px; background: #1a1a1a; color: white; border-radius: 8px; font-size: 0.9375rem; font-weight: 600; text-decoration: none; cursor: grab; transition: all 0.15s ease; }
+.bookmarklet-link:hover { background: #333; transform: translateY(-1px); }
+.bookmarklet-link:active { cursor: grabbing; }
   </style>
 </head>
 <body>
@@ -2573,6 +2577,16 @@ function renderOAuthSuccessPage(
 }</code></pre>
     ` : ''}
 
+    ${mcpUrl ? `
+    <hr>
+    <h2>Web Clipper</h2>
+    <p>Save articles from any browser. <a href="/bookmarklet">Full setup instructions &rarr;</a></p>
+    <p style="margin-top: 0.75rem;">Drag this to your bookmarks bar:</p>
+    <p style="text-align: center; margin: 0.75rem 0;">
+      <a class="bookmarklet-link" href="${(() => { const js = bookmarkletTemplate.replace(/__TOKEN__/g, sessionId).replace(/__API__/g, env.WORKER_URL + '/api/clip').trim().replace(/;$/, ''); return 'javascript:void(' + encodeURIComponent(js) + ')'; })()}">Save to Brain</a>
+    </p>
+    ` : ''}
+
     <div class="warning-box"><strong>Copy these values now.</strong> They won't be shown again.</div>
   </div>
   <script>
@@ -2593,6 +2607,92 @@ function copyField(id, btn) {
       "Content-Type": "text/html; charset=utf-8",
       "Set-Cookie": clearCookie,
     },
+  });
+}
+
+function renderBookmarkletPage(
+  env: Env,
+  sessionId: string,
+  installationUuid: string | null
+): Response {
+  const bookmarkletJs = bookmarkletTemplate.replace(/__TOKEN__/g, sessionId).replace(/__API__/g, `${env.WORKER_URL}/api/clip`).trim().replace(/;$/, '');
+  const bookmarkletHref = `javascript:void(${encodeURIComponent(bookmarkletJs)})`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Clipper - Brainstem</title>
+  <style>${SITE_STYLES}
+.bookmarklet-link { display: inline-block; padding: 12px 24px; background: #1a1a1a; color: white; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; cursor: grab; transition: all 0.15s ease; }
+.bookmarklet-link:hover { background: #333; transform: translateY(-1px); }
+.bookmarklet-link:active { cursor: grabbing; }
+.instructions { background: #f4f4f5; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+.instructions ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+.instructions li { margin: 0.4rem 0; line-height: 1.5; }
+.shortcut-section { margin-top: 2rem; }
+.shortcut-section h3 { margin-bottom: 0.5rem; }
+.code-block { background: #f4f4f5; border: 1px solid #d4d4d8; border-radius: 8px; padding: 1rem; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8125rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Web Clipper</h1>
+    <p>Save articles and web pages to your brain inbox from any browser.</p>
+
+    ${installationUuid ? `
+    <hr>
+    <h2>Bookmarklet</h2>
+    <div class="instructions">
+      <p><strong>Drag this link to your bookmarks bar:</strong></p>
+      <p style="margin-top: 0.75rem; text-align: center;">
+        <a class="bookmarklet-link" href="${bookmarkletHref}">Save to Brain</a>
+      </p>
+      <ol>
+        <li>Drag the button above to your browser's bookmarks bar</li>
+        <li>Navigate to any article or web page</li>
+        <li>Click "Save to Brain" in your bookmarks bar</li>
+        <li>Optionally add a context note when prompted</li>
+        <li>The article will be extracted and saved to your brain inbox</li>
+      </ol>
+    </div>
+
+    <div class="shortcut-section">
+      <h3>iOS Shortcut</h3>
+      <p>Save links from any iOS app via the Share Sheet:</p>
+      <div class="instructions">
+        <ol>
+          <li>Open the <strong>Shortcuts</strong> app on your iPhone/iPad</li>
+          <li>Create a new shortcut with a <strong>Share Sheet</strong> trigger (accepts URLs)</li>
+          <li>Add a <strong>"Get Name"</strong> action (extracts page title)</li>
+          <li>Add an <strong>"Ask for Input"</strong> action with prompt: "Add a note (optional)"</li>
+          <li>Add a <strong>"Get Contents of URL"</strong> action:</li>
+        </ol>
+        <div class="code-block">Method: POST
+URL: ${escapeHtml(env.WORKER_URL)}/api/clip
+Headers:
+  Authorization: Bearer ${escapeHtml(sessionId)}
+  Content-Type: application/json
+Body (JSON):
+  url: [Share Sheet Input]
+  title: [Name]
+  context: [Ask for Input result]</div>
+        <ol start="6">
+          <li>Add a <strong>"Show Notification"</strong> action: "Saved to brain!"</li>
+        </ol>
+      </div>
+    </div>
+    ` : `
+    <hr>
+    <div class="warning-box"><strong>No installation found.</strong> <a href="/setup">Connect a repository</a> first.</div>
+    `}
+  </div>
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 }
 
@@ -2796,6 +2896,48 @@ export default {
     // Handle /oauth/token - Token endpoint
     if (url.pathname === "/oauth/token") {
       return handleOAuthToken(request, env);
+    }
+
+    // Handle /api/clip - Web clipping endpoint (bookmarklet / iOS Shortcut)
+    if (url.pathname === "/api/clip") {
+      if (request.method === "OPTIONS") {
+        const { corsHeaders } = await import("./clip");
+        return new Response(null, { status: 204, headers: corsHeaders() });
+      }
+      if (request.method === "POST") {
+        const { handleClip, addCorsHeaders, corsHeaders } = await import("./clip");
+        try {
+          const auth = await authenticateRequest(request, env);
+          if (auth instanceof Response) return addCorsHeaders(auth);
+          // Resolve user's installation
+          const installation = await env.DB.prepare(
+            "SELECT id FROM installations WHERE user_id = ? LIMIT 1"
+          ).bind(auth.userId).first<{ id: string }>();
+          if (!installation) {
+            return addCorsHeaders(new Response(JSON.stringify({ ok: false, error: "No installation found. Visit /setup first." }), {
+              status: 404, headers: { "Content-Type": "application/json" },
+            }));
+          }
+          return addCorsHeaders(await handleClip(request, env, installation.id));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Internal server error";
+          return new Response(JSON.stringify({ ok: false, error: message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", ...corsHeaders() },
+          });
+        }
+      }
+    }
+
+    // Handle /bookmarklet - Bookmarklet delivery page (authenticated)
+    if (url.pathname === "/bookmarklet" && request.method === "GET") {
+      const auth = await authenticateRequest(request, env);
+      if (auth instanceof Response) return auth;
+      const installation = await env.DB.prepare(
+        "SELECT id FROM installations WHERE user_id = ? LIMIT 1"
+      ).bind(auth.userId).first<{ id: string }>();
+      const sessionId = request.headers.get("Authorization")?.slice(7) || "";
+      return renderBookmarkletPage(env, sessionId, installation?.id || null);
     }
 
     // All /debug/* endpoints require authentication

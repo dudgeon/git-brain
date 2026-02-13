@@ -5,7 +5,7 @@
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
-    "build:ui": "vite build --config ui/brain-inbox/vite.config.ts && vite build --config ui/brain-explorer/vite.config.ts",
+    "build:ui": "vite build --config ui/brain-inbox/vite.config.ts && vite build --config ui/brain-explorer/vite.config.ts && vite build --config ui/bookmarklet/vite.config.ts",
     "dev": "npm run build:ui && wrangler dev",
     "deploy": "npm run build:ui && wrangler deploy",
     "typecheck": "tsc --noEmit",
@@ -27,6 +27,7 @@
   "license": "ISC",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250110.0",
+    "@mozilla/readability": "^0.5.0",
     "@types/turndown": "^5.0.6",
     "typescript": "^5.7.2",
     "vite": "^7.3.1",

@@ -58,6 +58,8 @@ GitHub Push → Webhook → Worker → R2 Bucket → AI Search (reindex) → MCP
                    D1 Database (installations, logs, email)
 
 Email → Cloudflare Email Routing → Worker email() → R2 + GitHub (via saveToInbox)
+
+Bookmarklet/Shortcut → POST /api/clip → Worker → R2 + GitHub (via saveToInbox)
 ```
 
 **Key flow:**
@@ -119,11 +121,13 @@ git-brain/
 │   ├── cloudflare.ts      # Cloudflare API helpers (AI Search reindex)
 │   ├── inbox.ts           # Shared inbox logic (saveToInbox, ensureEmailTables)
 │   ├── email.ts           # Inbound email handler (routing, verification, MIME parsing)
+│   ├── clip.ts            # Web clipping handler (bookmarklet/iOS Shortcut → inbox)
 │   ├── utils.ts           # Pure utility functions (extractChangedFiles, sanitizeInboxTitle, validateAlias)
 │   ├── github.test.ts     # Unit tests for GitHub helpers (webhook signature, file filtering)
 │   ├── index.test.ts      # Unit tests for business logic (webhook parsing, title sanitization)
 │   ├── email.test.ts      # Unit tests for email functions (alias validation, code gen, parsing)
-│   └── html.d.ts          # Type declarations for .html imports
+│   ├── clip.test.ts       # Unit tests for clip functions (frontmatter builder)
+│   └── html.d.ts          # Type declarations for .html and .js text imports
 └── ui/
     ├── brain-inbox/       # Brain Inbox Composer app source
     │   ├── index.html     # HTML shell (composing → draft → saving → result states)
@@ -141,9 +145,15 @@ git-brain/
     │       ├── app.ts     # App logic (callServerTool, updateModelContext, fullscreen)
     │       ├── app.css    # Styles (collapsible drawer, host CSS variables)
     │       └── global.css
+    ├── bookmarklet/       # Web Clipper bookmarklet source
+    │   ├── vite.config.ts # Vite IIFE build config
+    │   ├── tsconfig.json
+    │   └── src/
+    │       └── clip.ts    # Bookmarklet logic (Readability + fetch + toast)
     └── dist/
         ├── index.html           # Brain Inbox bundle (generated)
-        └── brain-explorer.html  # Brain Explorer bundle (generated)
+        ├── brain-explorer.html  # Brain Explorer bundle (generated)
+        └── bookmarklet.js       # Bookmarklet IIFE bundle (generated)
 ```
 
 ## Secrets Configuration
@@ -190,6 +200,13 @@ All MCP connections require a bearer token from OAuth. Transport is Streamable H
 | `/setup` | GET | Landing page with "Connect Repository" button |
 | `/setup/callback` | GET | GitHub App installation callback |
 | `/webhook/github` | POST | GitHub webhook receiver |
+
+### API Endpoints (require bearer token)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/clip` | POST | Web clipping endpoint (bookmarklet / iOS Shortcut → inbox) |
+| `/api/clip` | OPTIONS | CORS preflight for cross-origin bookmarklet requests |
+| `/bookmarklet` | GET | Bookmarklet delivery page with drag-to-install link |
 
 ### OAuth & Discovery Endpoints
 | Endpoint | Method | Description |
@@ -620,6 +637,21 @@ The MCP server can load a `_brain_summary.json` file from R2 to enrich the `sear
 The summary is explicitly framed as **non-exhaustive** in the tool description to prevent Claude from thinking "topic X isn't in the summary, so I shouldn't search."
 
 ## Current Status
+
+**v5.2 — Web Clipping (Bookmarklet + iOS Shortcut):**
+- ✅ `POST /api/clip` REST endpoint: accepts `{ url, title, content?, context? }`, saves to brain inbox
+- ✅ Client-side HTML→markdown: bookmarklet runs Readability + Turndown in-browser, sends markdown to server
+- ✅ Self-contained bookmarklet: bundles `@mozilla/readability` + `turndown` (~45KB IIFE), extracts and converts in-browser
+- ✅ `prompt()` dialog for optional context note (stored as frontmatter field)
+- ✅ Bookmarklet cancellation: pressing Cancel on prompt aborts without saving
+- ✅ URL-only bookmark fallback: when Readability fails or no content provided (iOS Shortcut path)
+- ✅ CORS support: `Access-Control-Allow-Origin: *` (safe — auth is bearer token, not cookies)
+- ✅ Bookmarklet delivered on OAuth success page and dedicated `/bookmarklet` page
+- ✅ iOS Shortcut instructions on `/bookmarklet` page
+- ✅ Vite IIFE build pipeline: `ui/bookmarklet/` → `ui/dist/bookmarklet.js`
+- ✅ YAML frontmatter: `source: clip`, `url`, `date`, `title`, `context` (optional)
+- ✅ 81 total unit tests (7 new for clip frontmatter builder)
+- ✅ `buildClipFrontmatter()` pure function in `src/utils.ts`
 
 **v5.1 — Public Launch + MCP Apps Compatibility:**
 - ✅ GitHub App made public — any GitHub user can now install `git-brain-stem` on their repos

@@ -213,6 +213,47 @@ Expires: {expiry-date}
 
 > **Copy these values now.** They won't be shown again.
 
+### Web Clipper (shown if installation found)
+
+Save articles from any browser. [Full setup instructions →](/bookmarklet)
+
+Drag this to your bookmarks bar:
+
+**[Save to Brain]** ← draggable bookmarklet link (bearer token embedded)
+
+---
+
+## Bookmarklet Page (`/bookmarklet`)
+
+### Title
+
+Web Clipper
+
+### Intro
+
+Save articles and web pages to your brain inbox from any browser.
+
+### Bookmarklet
+
+Drag this to your bookmarks bar: **[Save to Brain]**
+
+1. Drag the button above to your browser's bookmarks bar
+2. Navigate to any article or web page
+3. Click "Save to Brain" in your bookmarks bar
+4. Optionally add a context note when prompted
+5. The article will be extracted and saved to your brain inbox
+
+### iOS Shortcut
+
+Save links from any iOS app via the Share Sheet:
+
+1. Open the Shortcuts app on your iPhone/iPad
+2. Create a new shortcut with a Share Sheet trigger (accepts URLs)
+3. Add a "Get Name" action (extracts page title)
+4. Add an "Ask for Input" action with prompt: "Add a note (optional)"
+5. Add a "Get Contents of URL" action (POST to /api/clip with bearer token, JSON body with url, title, context)
+6. Add a "Show Notification" action: "Saved to brain!"
+
 ---
 
 ## Error: Installation Cancelled (`/setup/callback?error=...`)

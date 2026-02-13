@@ -65,13 +65,13 @@ No way to revoke a bearer token before expiry. A compromised token remains valid
 
 Root cause: server used legacy SSE transport (`serveSSE`) while Claude.ai's proxy expects Streamable HTTP. Fix: switched to `HomeBrainMCP.serve("/mcp")` for Streamable HTTP transport. Also cleaned up tool definitions (conditional MCP Apps upgrade via `RegisteredTool.update()`, stripped SDK `execution` field). See [ADR-009](adr/009-mcp-apps-compatibility.md).
 
-### Web clipping (bookmarklet / share sheet / iOS Shortcut)
+### ~~Web clipping (bookmarklet / share sheet / iOS Shortcut)~~ ✅ DONE (v5.2)
 
-Save web pages to the brain inbox from any browser or mobile app. Requires a `/clip` endpoint with server-side content extraction (Readability.js + Turndown), cookie-based auth for the bookmarklet popup, and an iOS Shortcut for mobile share sheet. Separate build from email input. Research and design in [PRD-002 appendix](prd/002-input-modalities.md#appendix-other-modalities-research).
+`POST /api/clip` REST endpoint with CORS support. Self-contained bookmarklet bundles `@mozilla/readability` + `turndown` (~45KB IIFE) for client-side article extraction and HTML→markdown conversion, with `prompt()` for optional context notes. URL-only bookmark fallback for iOS Shortcuts. Delivered on OAuth success page and dedicated `/bookmarklet` page.
 
 ### X (Twitter) Bookmarks sync
 
-Deferred indefinitely. X API Basic tier costs $200/month, has a 15k tweet/month read quota, 800-bookmark ceiling, and is polling-only. Cost/value ratio is poor. Individual tweets can be saved via the bookmarklet (once built). Revisit if X ships affordable API pricing.
+Deferred indefinitely. X API Basic tier costs $200/month, has a 15k tweet/month read quota, 800-bookmark ceiling, and is polling-only. Cost/value ratio is poor. Individual tweets can be saved via the bookmarklet. Revisit if X ships affordable API pricing.
 
 ### Link installation to user on setup
 
@@ -165,6 +165,7 @@ The setup page is minimal. Could add progress indicators, repo selection (for mu
 
 Items completed in v4.4+:
 
+- **Web clipping (v5.2):** `POST /api/clip` REST endpoint with CORS for cross-origin bookmarklet requests. Self-contained bookmarklet bundles `@mozilla/readability` + `turndown` (~45KB minified IIFE) for client-side article extraction and HTML→markdown conversion. `prompt()` dialog for optional context notes stored in YAML frontmatter. URL-only bookmark fallback for iOS Shortcuts. Bookmarklet delivered on OAuth success page and dedicated `/bookmarklet` page. Vite IIFE build pipeline at `ui/bookmarklet/`. 81 total unit tests (7 new for clip frontmatter).
 - **Claude.ai proxy fix (ADR-009):** All MCP tools failed through Claude.ai's proxy with `-32600`. Root cause: server used legacy SSE transport (`serveSSE`) while Claude.ai expects Streamable HTTP. Fixed by switching to `HomeBrainMCP.serve("/mcp")`. Also replaced `registerAppTool` with standard `server.registerTool()` + conditional upgrade via `RegisteredTool.update()` after MCP handshake (keeps MCP Apps UI for Claude Desktop). Stripped SDK-injected `execution` field from tool definitions. See [ADR-009](adr/009-mcp-apps-compatibility.md).
 - **Email input (v5.0):** `brain_account` MCP tool for email forwarding setup. Inbound code verification (MailChannels deprecated — no outbound email). Cloudflare Email Routing catch-all `*@brainstem.cc` → Worker `email()` handler. MIME parsing via postal-mime + Turndown HTML→markdown. Shared `saveToInbox()` extracted to `src/inbox.ts`. `triggerAISearchReindex()` extracted to `src/cloudflare.ts`. D1 tables: `email_aliases`, `verified_senders`, `email_log` (auto-migrated). Rate limiting (50/sender/day, 200/installation/day). Vanity aliases, sub-address routing (`brain+{uuid}@`), sender verification, email cleanup on uninstall. 74 total unit tests (27 new). DO state persistence fix via `this.ctx.storage`. E2E verified. See [ADR-008](adr/008-email-input.md).
 - **Tool metadata & prompts (v4.7):** Improved `search_brain` tool description to encourage automatic use — removed "private" framing that caused Claude to hesitate, added semantic triggers (info unlikely in training data, augmenting memory), added common phrase triggers. Added MCP prompts (`brain_search`, `brain_inbox`) as explicit tool invocation fallbacks. Updated `about` tool to document prompts and reinforce tool usage. Server advertises `prompts` capability; Claude Desktop UI support for prompts is pending (prompts work via explicit instruction).

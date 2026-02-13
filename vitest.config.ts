@@ -19,6 +19,7 @@ export default defineConfig({
       '../site/brainstem-diagram.png': new URL('./test-mocks/empty-asset.js', import.meta.url).pathname,
       '../ui/dist/index.html': new URL('./test-mocks/empty-asset.js', import.meta.url).pathname,
       '../ui/dist/brain-explorer.html': new URL('./test-mocks/empty-asset.js', import.meta.url).pathname,
+      '../ui/dist/bookmarklet.js': new URL('./test-mocks/empty-asset.js', import.meta.url).pathname,
     },
   },
 });

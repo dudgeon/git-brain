@@ -149,3 +149,23 @@ export function buildEmailFrontmatter(from: string, date: string | undefined, su
     "---",
   ].join("\n");
 }
+
+/**
+ * Build YAML frontmatter for a web-clipped inbox note
+ */
+export function buildClipFrontmatter(url: string, title?: string, context?: string): string {
+  const lines = [
+    "---",
+    "source: clip",
+    `url: ${url}`,
+    `date: ${new Date().toISOString()}`,
+  ];
+  if (title) {
+    lines.push(`title: "${title.replace(/"/g, '\\"')}"`);
+  }
+  if (context) {
+    lines.push(`context: "${context.replace(/"/g, '\\"')}"`);
+  }
+  lines.push("---");
+  return lines.join("\n");
+}
