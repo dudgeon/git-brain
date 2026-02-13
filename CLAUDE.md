@@ -182,7 +182,7 @@ Set in `wrangler.toml` under `[vars]`:
 |----------|---------------|-------------|
 | `/mcp/{uuid}` | Yes (bearer token) | Per-installation MCP endpoint (multi-tenant) |
 
-All MCP connections require a bearer token from OAuth. The legacy `/mcp` endpoint and workers.dev domain have been removed (ADR-002).
+All MCP connections require a bearer token from OAuth. Transport is Streamable HTTP (ADR-009; previously SSE). The legacy `/mcp` endpoint and workers.dev domain have been removed (ADR-002).
 
 ### Setup & Webhooks
 | Endpoint | Method | Description |
@@ -568,6 +568,8 @@ Both call `deleteInstallation(env, installationUuid)` which:
 
 7. **Webhook URL misconfigured**: GitHub App webhook URL was set to `/setup/callback` (a GET endpoint) instead of `/webhook/github`. All webhook POST requests returned 400 for days. Diagnosed by querying `GET /app/hook/deliveries` using the local GitHub App private key. Fix: updated webhook URL in GitHub App settings.
 
+8. **Claude.ai proxy rejects `structuredContent` and `execution` fields (ADR-009)**: Claude.ai's MCP proxy returned `-32600` for any tool response containing MCP Apps `structuredContent` or SDK-injected `execution: { taskSupport: 'forbidden' }`. Two fixes: (a) switched from `registerAppTool` to standard `server.registerTool()` + conditional upgrade via `RegisteredTool.update()` after client capabilities are known, (b) stripped `execution` field from all tool definitions. Also switched transport from legacy SSE (`serveSSE`) to Streamable HTTP (`HomeBrainMCP.serve("/mcp")`).
+
 ## Connecting to Claude
 
 ### Getting a Token
@@ -618,6 +620,13 @@ The MCP server can load a `_brain_summary.json` file from R2 to enrich the `sear
 The summary is explicitly framed as **non-exhaustive** in the tool description to prevent Claude from thinking "topic X isn't in the summary, so I shouldn't search."
 
 ## Current Status
+
+**v5.1 — Public Launch + MCP Apps Compatibility:**
+- ✅ GitHub App made public — any GitHub user can now install `git-brain-stem` on their repos
+- ✅ Tenant isolation verified with two live installations (search, R2, debug endpoints)
+- ✅ Claude.ai proxy fix: switched from legacy SSE to Streamable HTTP transport (ADR-009)
+- ✅ MCP Apps conditional upgrade: tools register without `_meta`, upgraded after handshake for Apps-capable clients
+- ✅ Stripped SDK-injected `execution` field that caused Claude.ai `-32600` errors
 
 **v5.0 — Email Input (Forward Emails to Brain):**
 - ✅ `brain_account` MCP tool: manage email forwarding setup, sender verification, vanity aliases
@@ -694,7 +703,7 @@ The summary is explicitly framed as **non-exhaustive** in the tool description t
 
 ## Known Limitations
 
-1. **AI Search tenant isolation unverified** — Folder metadata filtering is implemented but never tested with multiple tenants. Cross-tenant leakage is theoretically possible.
+1. **AI Search tenant isolation verified (unidirectional)** — Folder metadata filtering (`gt`/`lte`) confirmed working: an empty installation cannot see another tenant's search results, R2 files, or folder listings. Bidirectional test (both tenants with data) still needed.
 
 2. **No token refresh** — Sessions expire after 1 year with no refresh mechanism.
 
@@ -717,3 +726,4 @@ See [docs/BACKLOG.md](docs/BACKLOG.md) for the full prioritized product backlog.
 - [GitHub Apps](https://docs.github.com/en/apps)
 - [MCP Apps Extension](https://github.com/modelcontextprotocol/ext-apps)
 - [Cloudflare Email Routing](https://developers.cloudflare.com/email-routing/)
+- [ADR-009: MCP Apps Compatibility](docs/adr/009-mcp-apps-compatibility.md)

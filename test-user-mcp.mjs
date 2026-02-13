@@ -1,6 +1,6 @@
 // Test script for per-user MCP endpoint (authenticated)
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const MCP_URL = "https://brainstem.cc/mcp/f7e4d8a2-1fb6-4352-8b63-bbfdf03b372a";
 const BEARER_TOKEN = process.env.BRAINSTEM_TOKEN || "dd6946d2-3625-40f0-9d9c-f585ea7b29e8";
@@ -8,7 +8,7 @@ const BEARER_TOKEN = process.env.BRAINSTEM_TOKEN || "dd6946d2-3625-40f0-9d9c-f58
 async function main() {
   console.log("Connecting to:", MCP_URL);
 
-  const transport = new SSEClientTransport(new URL(MCP_URL), {
+  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL), {
     requestInit: {
       headers: {
         Authorization: `Bearer ${BEARER_TOKEN}`,

@@ -1,10 +1,10 @@
 import { McpAgent } from "agents/mcp";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, type RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  registerAppTool,
   registerAppResource,
   RESOURCE_MIME_TYPE,
+  getUiCapability,
 } from "@modelcontextprotocol/ext-apps/server";
 import {
   getInstallationToken,
@@ -120,6 +120,79 @@ export class HomeBrainMCP extends McpAgent<Env> {
 
   // GitHub repo for this installation (for source links)
   private repoFullName: string = "";
+
+  // Tool handles for conditional MCP Apps upgrade (ADR-009)
+  private _inboxTool: RegisteredTool | null = null;
+  private _inboxSaveTool: RegisteredTool | null = null;
+
+  /**
+   * Upgrade inbox tools with MCP Apps metadata for clients that support it.
+   * Called from oninitialized callback after client capabilities are known.
+   * See ADR-009 for rationale.
+   */
+  private upgradeToAppsTools() {
+    const uri = HomeBrainMCP.INBOX_RESOURCE_URI;
+    const appsMeta = {
+      ui: { resourceUri: uri },
+      "ui/resourceUri": uri,
+    };
+
+    this._inboxTool?.update({
+      _meta: appsMeta,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      callback: async (args: any) => {
+        const { title, content } = args as { title: string; content: string };
+        const safeTitle = sanitizeInboxTitle(title);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        const filePath = `inbox/${timestamp}-${safeTitle}.md`;
+        return {
+          content: [{ type: "text" as const, text: `Note draft prepared: ${filePath}\nTitle: ${title}\n\nThis note has NOT been saved yet. In UI hosts, use the composer to review and save. In non-UI hosts, call brain_inbox_save with the title and content to save.` }],
+          structuredContent: { title, content, filePath },
+        };
+      },
+    });
+
+    this._inboxSaveTool?.update({
+      _meta: appsMeta,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      callback: async (args: any) => {
+        const { title, content, filePath: providedPath } = args as { title: string; content: string; filePath?: string };
+        try {
+          const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
+          if (!installationUuid) {
+            return {
+              content: [{ type: "text" as const, text: "Cannot save: no installation context. Use a personalized MCP URL." }],
+              isError: true,
+            };
+          }
+
+          const result = await saveToInbox(this.env, installationUuid, title, content, {
+            filePath: providedPath,
+          });
+
+          if (result.error) {
+            return {
+              content: [{ type: "text" as const, text: `Note saved to brain inbox (R2 only): ${result.filePath}\nGitHub write failed: ${result.error}` }],
+              structuredContent: { filePath: result.filePath, r2: result.r2, github: result.github, error: result.error },
+            };
+          }
+
+          return {
+            content: [{ type: "text" as const, text: `Note saved to brain inbox: ${result.filePath}` }],
+            structuredContent: { filePath: result.filePath, r2: result.r2, github: result.github },
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          return {
+            content: [{ type: "text" as const, text: `Failed to save note: ${message}` }],
+            isError: true,
+          };
+        }
+      },
+    });
+
+    this.server.sendToolListChanged();
+  }
 
   /**
    * Get the R2 prefix for this DO instance
@@ -252,13 +325,35 @@ Note: When the user asks about their personal information, family, projects, or 
     this.registerGetDocument();
     this.registerListRecent();
     this.registerListFolders();
-    await this.registerInbox();
+    this.registerInbox();
 
     // Register MCP App UI resource for brain_inbox composer
     this.registerInboxAppResource();
 
     // Register account management tool (email setup, aliases)
     this.registerBrainAccount();
+
+    // Strip `execution: { taskSupport: 'forbidden' }` from all tool definitions.
+    // MCP SDK 1.25.2 hardcodes this field into every tool. Claude.ai's proxy rejects
+    // tool definitions with this unknown field (returns -32600 "Invalid content from server").
+    // See ADR-009.
+    const registeredTools = (this.server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
+    for (const tool of Object.values(registeredTools)) {
+      delete (tool as Record<string, unknown>).execution;
+    }
+
+    // After MCP handshake, upgrade inbox tools with Apps metadata for capable clients (ADR-009)
+    this.server.server.oninitialized = () => {
+      try {
+        const caps = this.server.server.getClientCapabilities();
+        const uiCap = getUiCapability(caps as Parameters<typeof getUiCapability>[0]);
+        if (uiCap) {
+          this.upgradeToAppsTools();
+        }
+      } catch {
+        // Client doesn't support Apps — keep standard tool definitions
+      }
+    };
   }
 
   /**
@@ -564,12 +659,12 @@ Note: When the user asks about their personal information, family, projects, or 
    */
   private static readonly INBOX_RESOURCE_URI = "ui://brain-inbox/composer.html";
 
-  private async registerInbox() {
-    // Compose tool — returns draft as structured content, does NOT save directly.
-    // In UI hosts: composer app handles countdown + editing + save via brain_inbox_save.
+  private registerInbox() {
+    // Compose tool — returns draft text, does NOT save directly.
+    // In UI hosts (after upgrade): composer app handles countdown + editing + save.
     // In non-UI hosts: returns draft content only — use brain_inbox_save to actually save.
-    registerAppTool(
-      this.server,
+    // Registered without _meta so Claude.ai proxy doesn't reject it (ADR-009).
+    this._inboxTool = this.server.registerTool(
       "brain_inbox",
       {
         description: "Preview a note before saving to the inbox (UI hosts only). In UI-capable hosts, shows an interactive composer with editing and countdown before save. For non-UI hosts or AI agents, use brain_inbox_save instead to save notes directly.",
@@ -583,17 +678,14 @@ Note: When the user asks about their personal information, family, projects, or 
             .string()
             .describe("The markdown content of the note"),
         },
-        _meta: { ui: { resourceUri: HomeBrainMCP.INBOX_RESOURCE_URI } },
       },
       async ({ title, content }) => {
-        // Generate the file path that will be used on save
         const safeTitle = sanitizeInboxTitle(title);
         const timestamp = new Date()
           .toISOString()
           .replace(/[:.]/g, "-")
           .slice(0, 19);
-        const filename = `${timestamp}-${safeTitle}.md`;
-        const filePath = `inbox/${filename}`;
+        const filePath = `inbox/${timestamp}-${safeTitle}.md`;
 
         return {
           content: [
@@ -602,15 +694,14 @@ Note: When the user asks about their personal information, family, projects, or 
               text: `Note draft prepared: ${filePath}\nTitle: ${title}\n\nThis note has NOT been saved yet. In UI hosts, use the composer to review and save. In non-UI hosts, call brain_inbox_save with the title and content to save.`,
             },
           ],
-          structuredContent: { title, content, filePath },
         };
       }
     );
 
     // Save tool — directly saves a note to the inbox. Preferred for non-UI hosts and AI agents.
     // In UI hosts, the composer app may call this after countdown/edit.
-    registerAppTool(
-      this.server,
+    // Registered without _meta so Claude.ai proxy doesn't reject it (ADR-009).
+    this._inboxSaveTool = this.server.registerTool(
       "brain_inbox_save",
       {
         description: "Save a note to the brain inbox. Creates a .md file in the inbox/ folder, writes to both R2 and the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder. Provide a short title (used as filename) and the markdown content.",
@@ -618,11 +709,6 @@ Note: When the user asks about their personal information, family, projects, or 
           title: z.string().describe("Short title for the note (used as filename, e.g. 'grocery-list')"),
           content: z.string().describe("The markdown content of the note"),
           filePath: z.string().optional().describe("Optional custom file path. If omitted, auto-generates as inbox/{timestamp}-{title}.md"),
-        },
-        _meta: {
-          ui: {
-            resourceUri: HomeBrainMCP.INBOX_RESOURCE_URI,
-          },
         },
       },
       async ({ title, content, filePath: providedPath }) => {
@@ -642,13 +728,11 @@ Note: When the user asks about their personal information, family, projects, or 
           if (result.error) {
             return {
               content: [{ type: "text" as const, text: `Note saved to brain inbox (R2 only): ${result.filePath}\nGitHub write failed: ${result.error}` }],
-              structuredContent: { filePath: result.filePath, r2: result.r2, github: result.github, error: result.error },
             };
           }
 
           return {
             content: [{ type: "text" as const, text: `Note saved to brain inbox: ${result.filePath}` }],
-            structuredContent: { filePath: result.filePath, r2: result.r2, github: result.github },
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unknown error";
@@ -1202,8 +1286,8 @@ async function verifyInstallationOwnership(
   return installation?.user_id === userId;
 }
 
-// Create the base MCP handler
-const mcpHandler = HomeBrainMCP.serveSSE("/mcp");
+// Create the base MCP handler (Streamable HTTP transport for Claude.ai proxy compatibility)
+const mcpHandler = HomeBrainMCP.serve("/mcp");
 
 // Installation record type
 interface Installation {
@@ -1707,7 +1791,7 @@ async function handleUserMcp(
   rewrittenUrl.searchParams.set("repo", installation.repo_full_name);
   const rewrittenRequest = new Request(rewrittenUrl.toString(), request);
 
-  // Forward to the MCP handler (which handles SSE setup properly)
+  // Forward to the MCP handler (Streamable HTTP transport)
   return mcpHandler.fetch(rewrittenRequest, env, ctx);
 }
 
@@ -2790,18 +2874,22 @@ export default {
 
     // /doc/* endpoint removed (ADR-002 Phase 0) — use get_document MCP tool instead
 
-    // /mcp and /mcp/message SSE transport
+    // /mcp Streamable HTTP transport (POST, GET, DELETE)
     // With installation query param (set by handleUserMcp): full MCP with all tools
     // Without installation param (bare /mcp): generic MCP with about-only tool
-    if (url.pathname === "/mcp/message" || (url.pathname === "/mcp" && request.method === "POST")) {
+    if (url.pathname === "/mcp" && (request.method === "POST" || request.method === "GET" || request.method === "DELETE" || request.method === "OPTIONS")) {
+      // GET without mcp-session-id header is not a Streamable HTTP request — return 404
+      if (request.method === "GET" && !request.headers.get("mcp-session-id")) {
+        return new Response(JSON.stringify({
+          error: "Not found",
+          message: "Use /mcp/{uuid} with a bearer token. Visit /setup to get started.",
+        }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
       return mcpHandler.fetch(request, env, ctx);
     }
-    // GET /mcp without UUID — return 404 (not an MCP endpoint)
-    if (url.pathname === "/mcp" && request.method === "GET") {
-      return new Response(JSON.stringify({
-        error: "Not found",
-        message: "Use /mcp/{uuid} with a bearer token. Visit /setup to get started.",
-      }), { status: 404, headers: { "Content-Type": "application/json" } });
+    // Legacy /mcp/message path (SSE transport) — forward to handler for backward compatibility
+    if (url.pathname === "/mcp/message" && request.method === "POST") {
+      return mcpHandler.fetch(request, env, ctx);
     }
 
     return new Response("Not found", { status: 404 });

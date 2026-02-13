@@ -98,6 +98,8 @@ Built on Cloudflare's stack:
 
 Your synced files are stored on Cloudflare R2, encrypted at rest with AES-256-GCM (Cloudflare-managed keys), and indexed by Cloudflare AI Search for semantic retrieval. All connections use TLS. Access to your data requires authentication via GitHub OAuth.
 
+**Tenant isolation:** Each installation's data is stored under a unique R2 prefix (`brains/{uuid}/`) and search queries are scoped using folder metadata filters. This isolation has been verified with multiple live installations — searches, file listings, and document retrievals from one installation cannot access another installation's data. Debug endpoints enforce ownership checks. See the [backlog](docs/BACKLOG.md) for detailed test results.
+
 The platform operator has technical access to stored content for operational purposes. This is the same trust model as most SaaS products — you are trusting both the infrastructure provider (Cloudflare) and the platform operator. Do not connect repositories containing secrets, credentials, or highly sensitive data you are not comfortable storing on a third-party service.
 
 You can disconnect and delete all your synced data at any time by uninstalling the GitHub App from your repository settings. Uninstallation triggers automatic cleanup of all stored files and search index entries.

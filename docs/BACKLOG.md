@@ -16,11 +16,28 @@
 
 Decided: R2 already encrypts at rest (Cloudflare-managed AES-256-GCM). Application-layer encryption is incompatible with AI Search (which reads R2 directly) and any scheme where the Worker holds keys doesn't protect against the operator. Phase 1: document trust model and add disclosures (done). Phase 2: per-user R2 + AI Search instances for hard tenant isolation. Phase 3 (aspirational): BYOA model for true operator-blindness.
 
-### Verify AI Search tenant isolation
+### Multi-tenant readiness
 
-Search queries use folder metadata filters (`gt`/`lte` on folder path) for cross-tenant isolation, but this has never been verified with multiple tenants. The `folder` metadata key may not exist or may not filter correctly.
+The GitHub App (`git-brain-stem`) was made public on 2026-02-09. Any GitHub user can now install it. The onboarding flow (setup → callback → initial sync → OAuth → MCP) works for new users, but multi-tenant correctness has never been verified end-to-end.
 
-**Fix:** Deploy a second test installation, sync files, and verify that search from installation A never returns installation B's documents.
+**Done:** GitHub App visibility set to public.
+
+**Remaining:**
+- Verify AI Search tenant isolation (see below)
+- Verify onboarding flow produces a fully working installation for a non-owner user
+- Verify account deletion (uninstall webhook) cleans up a non-owner user's data correctly
+- Confirm no hardcoded assumptions about single-tenant usage in the codebase
+
+### ~~Verify AI Search tenant isolation~~ ✅ VERIFIED (2026-02-10)
+
+Search queries use folder metadata filters (`gt`/`lte` on folder path) for cross-tenant isolation. Verified with two live installations:
+- **Installation A** (`dudgeon/home-brain`): 260 files, searches return results for "family", "Alina", "brainstem project"
+- **Installation B** (`clawdbot-dudgeon/test-repo`): 0 files (empty repo)
+- **Test:** Searched from installation B for queries that only exist in A's data → all returned "No results found"
+- **R2 isolation also verified:** `list_recent` and `list_folders` from B returned empty
+- **Debug endpoint ownership:** `/debug/status/{B's uuid}` returns 403 when accessed with A's token
+
+**Remaining gap:** This test used an empty installation B. A stronger test would populate B with distinct content and verify bidirectional isolation (A can't see B's data AND B can't see A's data). Current test only proves unidirectional isolation (B can't see A).
 
 ### Token refresh flow
 
@@ -44,20 +61,9 @@ No way to revoke a bearer token before expiry. A compromised token remains valid
 
 ## Medium — Product quality
 
-### `structuredContent` breaks Claude.ai MCP proxy
+### ~~Claude.ai MCP proxy `-32600` error~~ ✅ FIXED (ADR-009)
 
-Tools that return `structuredContent` (MCP Apps extension field from `@modelcontextprotocol/ext-apps`) fail when called via Claude.ai's MCP connector. The proxy returns JSON-RPC error `-32600` ("Anthropic Proxy: Invalid content from server"). The same tool calls succeed via direct MCP clients (e.g., Node.js `@modelcontextprotocol/sdk` client, Claude Desktop).
-
-**Affected tools:** `brain_inbox_save`, `brain_inbox` — both return `structuredContent` alongside the standard `content` array.
-
-**Workaround:** Users can still use these tools from Claude Desktop or Claude Code. The Claude.ai connector only fails on the tool response — the tool itself executes successfully (the note is saved).
-
-**Fix options:**
-1. Conditionally omit `structuredContent` when the client doesn't advertise MCP Apps support (check client capabilities during initialization)
-2. Move `structuredContent` into a separate response path that only activates for MCP Apps-capable clients
-3. Wait for Claude.ai to support the MCP Apps extension spec
-
-**Reproduction:** Connect brainstem MCP via Claude.ai connector → invoke `brain_inbox_save` → observe `-32600` error. Same call via `node test-user-mcp.mjs` succeeds.
+Root cause: server used legacy SSE transport (`serveSSE`) while Claude.ai's proxy expects Streamable HTTP. Fix: switched to `HomeBrainMCP.serve("/mcp")` for Streamable HTTP transport. Also cleaned up tool definitions (conditional MCP Apps upgrade via `RegisteredTool.update()`, stripped SDK `execution` field). See [ADR-009](adr/009-mcp-apps-compatibility.md).
 
 ### Web clipping (bookmarklet / share sheet / iOS Shortcut)
 
@@ -159,6 +165,7 @@ The setup page is minimal. Could add progress indicators, repo selection (for mu
 
 Items completed in v4.4+:
 
+- **Claude.ai proxy fix (ADR-009):** All MCP tools failed through Claude.ai's proxy with `-32600`. Root cause: server used legacy SSE transport (`serveSSE`) while Claude.ai expects Streamable HTTP. Fixed by switching to `HomeBrainMCP.serve("/mcp")`. Also replaced `registerAppTool` with standard `server.registerTool()` + conditional upgrade via `RegisteredTool.update()` after MCP handshake (keeps MCP Apps UI for Claude Desktop). Stripped SDK-injected `execution` field from tool definitions. See [ADR-009](adr/009-mcp-apps-compatibility.md).
 - **Email input (v5.0):** `brain_account` MCP tool for email forwarding setup. Inbound code verification (MailChannels deprecated — no outbound email). Cloudflare Email Routing catch-all `*@brainstem.cc` → Worker `email()` handler. MIME parsing via postal-mime + Turndown HTML→markdown. Shared `saveToInbox()` extracted to `src/inbox.ts`. `triggerAISearchReindex()` extracted to `src/cloudflare.ts`. D1 tables: `email_aliases`, `verified_senders`, `email_log` (auto-migrated). Rate limiting (50/sender/day, 200/installation/day). Vanity aliases, sub-address routing (`brain+{uuid}@`), sender verification, email cleanup on uninstall. 74 total unit tests (27 new). DO state persistence fix via `this.ctx.storage`. E2E verified. See [ADR-008](adr/008-email-input.md).
 - **Tool metadata & prompts (v4.7):** Improved `search_brain` tool description to encourage automatic use — removed "private" framing that caused Claude to hesitate, added semantic triggers (info unlikely in training data, augmenting memory), added common phrase triggers. Added MCP prompts (`brain_search`, `brain_inbox`) as explicit tool invocation fallbacks. Updated `about` tool to document prompts and reinforce tool usage. Server advertises `prompts` capability; Claude Desktop UI support for prompts is pending (prompts work via explicit instruction).
 - **Unit test coverage (v4.6):** Added 47 unit tests using Vitest covering extractable business logic: webhook signature verification (HMAC-SHA256, security-critical), file filtering (extension/sensitive file/directory exclusion logic), webhook payload parsing (changed/removed file extraction, deduplication), and title sanitization (inbox filename normalization). Pure functions extracted to `src/utils.ts` for testability (no Workers dependencies). Establishes regression safety net for ADR-005 refactor (ChatGPT App dual distribution). Tests run via `npm test` and `npm run test:watch`.
@@ -194,4 +201,5 @@ Items completed in v4.0-v4.3, for changelog reference:
 - [ADR-003: Encryption at Rest](adr/003-encryption-at-rest.md)
 - [ADR-004: MCP Apps UI](adr/004-mcp-apps-ui.md)
 - [ADR-008: Email Input](adr/008-email-input.md)
+- [ADR-009: MCP Apps Compatibility](adr/009-mcp-apps-compatibility.md)
 - [CLAUDE.md](../CLAUDE.md)
