@@ -1355,7 +1355,24 @@ function handleHomepage(env: Env): Response {
       <p class="muted">Claude Desktop, Claude Code, Claude.ai, or other MCP-compatible clients can search and retrieve from your brain.</p>
     </div>
 
-    <p class="muted" style="text-align: center; margin-top: 1.5rem;">That's it. No complex setup. No manual file uploads. Push to GitHub, and your AI knows about it within a minute.</p>
+    <h2>Ways to save</h2>
+
+    <div class="step">
+      <p><span class="step-title">Email forwarding</span></p>
+      <p class="muted">Forward any email to your brainstem address and it's saved as an inbox note. Set up via the <code>brain_account</code> tool in your AI client.</p>
+    </div>
+
+    <div class="step">
+      <p><span class="step-title">Web clipper</span></p>
+      <p class="muted">A browser bookmarklet that extracts and saves articles with one click. Available on your <a href="/oauth/authorize">OAuth success page</a>.</p>
+    </div>
+
+    <div class="step">
+      <p><span class="step-title">Inbox tools</span></p>
+      <p class="muted">Ask your AI to save notes, reminders, or thoughts directly via <code>brain_inbox</code> or <code>brain_inbox_save</code>.</p>
+    </div>
+
+    <p class="muted" style="text-align: center; margin-top: 1.5rem;">That's it. No complex setup. Push to GitHub, forward an email, clip a webpage, or ask your AI to take a note &mdash; it's all searchable within a minute.</p>
 
     <div style="margin-top: 1.5rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px; background: #fafafa;">
       <p style="margin: 0 0 0.5rem 0; font-weight: 600; font-size: 0.9rem;">Security &amp; Privacy</p>
@@ -1567,6 +1584,15 @@ function renderSuccessPage(mcpUrl: string, repoName: string): Response {
 
     <h2>Your endpoint</h2>
     <div class="highlight">${escapeHtml(mcpUrl)}</div>
+
+    <hr>
+
+    <h2>What else can you do?</h2>
+    <p class="muted">Once connected, your AI has access to eight tools: search, document retrieval, folder browsing, note-taking, and email forwarding setup.</p>
+    <ul>
+      <li><strong>Save web pages:</strong> Get the bookmarklet from your <a href="/oauth/authorize">OAuth success page</a></li>
+      <li><strong>Forward emails:</strong> Set up email-to-brain by asking your AI about <code>brain_account</code></li>
+    </ul>
 
     <hr>
 
@@ -2587,7 +2613,7 @@ function renderOAuthSuccessPage(
     </p>
     ` : ''}
 
-    <div class="warning-box"><strong>Copy these values now.</strong> They won't be shown again.</div>
+    <div class="info-box">Need a new token? You can <a href="/oauth/authorize">re-authorize with GitHub</a> anytime.</div>
   </div>
   <script>
 function copyField(id, btn) {

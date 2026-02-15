@@ -34,21 +34,25 @@ Claude Desktop, Claude Code, or any MCP-compatible client can search and retriev
 ### Flow Diagram
 
 ```mermaid
-flowchart TD
-    subgraph knowledge["Your Knowledge"]
-        obsidian["Obsidian vault"]
-        markdown["Markdown notes"]
-        docs["Project docs"]
+flowchart LR
+    subgraph sources["Sources"]
+        user["You (git push)"]
+        agents["Coding agents"]
     end
 
     subgraph github["GitHub"]
         repo["Private repo"]
     end
 
-    subgraph brainstem["Brain Stem"]
-        sync["Fetch & sync files"]
-        store["Store in R2"]
-        index["Semantic search index"]
+    subgraph save["Save to Brain"]
+        email["Email"]
+        clip["Web clipper"]
+    end
+
+    subgraph brainstem["Brainstem"]
+        sync["Sync"]
+        store["R2 Storage"]
+        index["AI Search"]
         mcp["MCP Server"]
     end
 
@@ -56,24 +60,26 @@ flowchart TD
         desktop["Claude Desktop"]
         code["Claude Code"]
         web["Claude.ai"]
-        clawdbot["Clawdbot"]
-        openclaw["Open Claw"]
     end
 
-    obsidian & markdown & docs -->|git push| repo
+    user & agents -->|git push| repo
     repo -->|webhook| sync
     sync --> store --> index --> mcp
-    mcp -->|MCP protocol| desktop & code & web & clawdbot & openclaw
+    email & clip --> store
+    mcp -->|search, browse, retrieve| clients
+    clients -->|brain_inbox, brain_inbox_save| mcp
+    mcp -->|save to inbox| store
 
-    style knowledge fill:#f9f9f9,stroke:#ccc
+    style sources fill:#f9f9f9,stroke:#ccc
     style github fill:#f0f0f0,stroke:#999
+    style save fill:#fff8f0,stroke:#d9a64e
     style brainstem fill:#e8f4f8,stroke:#69b
     style clients fill:#f0f0f0,stroke:#999
 ```
 
 ### Tools
 
-Brain Stem exposes six tools over MCP. Your AI client discovers them automatically when connected.
+Brain Stem exposes eight tools over MCP. Your AI client discovers them automatically when connected.
 
 **search_brain** — Semantic search across your knowledge base. Returns relevant passages with source document links. The tool description dynamically reflects your actual content domains and topics so your AI knows what to search for.
 
@@ -85,7 +91,23 @@ Brain Stem exposes six tools over MCP. Your AI client discovers them automatical
 
 **brain_inbox** — Add a note to the brain's inbox. In Claude Desktop, this opens an interactive composer with a live markdown preview, a 5-second countdown before auto-save, and the ability to edit or cancel before the note is committed. Notes are saved to both your GitHub repo and the search index. In other clients, the note content is returned as text.
 
+**brain_inbox_save** — Save a note directly to the brain inbox (R2 + GitHub). Preferred for non-UI hosts and AI agents. In Claude Desktop, the interactive `brain_inbox` composer calls this automatically after the countdown.
+
+**brain_account** — Manage email-to-brain forwarding. Set up a brainstem email address, verify sender addresses, and claim a vanity alias (e.g., `dan@brainstem.cc`). Once configured, forwarded emails are saved as inbox notes.
+
 **about** — Returns information about your Brain Stem instance, including what content is available and how to use the other tools.
+
+### Ways to Save
+
+Beyond syncing your GitHub repo, there are three additional ways to add content to your brain:
+
+**Email forwarding** — Forward any email to your brainstem address and it's saved as an inbox note. Set up via the `brain_account` tool in any connected AI client.
+
+**Web clipper** — A browser bookmarklet that extracts and saves articles with one click. Available on your OAuth success page and at `/bookmarklet`.
+
+**Inbox tools** — Ask your AI to save notes, reminders, or thoughts directly via `brain_inbox` (interactive composer in Claude Desktop) or `brain_inbox_save` (direct save).
+
+All saved content lands in your `inbox/` folder, syncs to GitHub, and is searchable within a minute.
 
 ### Security & Privacy
 
@@ -97,7 +119,7 @@ Brain Stem is open source. [View on GitHub](https://github.com/dudgeon/git-brain
 
 ### Closing
 
-That's it. No complex setup. No manual file uploads. Push to GitHub, and your AI knows about it within a minute.
+That's it. No complex setup. Push to GitHub, forward an email, clip a webpage, or ask your AI to take a note -- it's all searchable within a minute.
 
 ### Primary CTA
 
@@ -158,6 +180,13 @@ Settings → Connectors → Add custom connector → paste your endpoint URL and
 
 `https://brainstem.cc/mcp/{uuid}`
 
+### What else can you do?
+
+Once connected, your AI has access to eight tools: search, document retrieval, folder browsing, note-taking, and email forwarding setup. You can also:
+
+- **Save web pages**: Get the bookmarklet from your [OAuth success page](/oauth/authorize)
+- **Forward emails**: Set up email-to-brain in any connected client by asking about `brain_account`
+
 ### Already installed?
 
 Need a new token? You can [re-authorize with GitHub](/oauth/authorize) at any time to get a fresh bearer token.
@@ -211,7 +240,7 @@ Expires: {expiry-date}
 }
 ```
 
-> **Copy these values now.** They won't be shown again.
+> Need a new token? You can [re-authorize with GitHub](/oauth/authorize) anytime.
 
 ### Web Clipper (shown if installation found)
 

@@ -69,6 +69,28 @@ Root cause: server used legacy SSE transport (`serveSSE`) while Claude.ai's prox
 
 `POST /api/clip` REST endpoint with CORS support. Self-contained bookmarklet bundles `@mozilla/readability` + `turndown` (~45KB IIFE) for client-side article extraction and HTML→markdown conversion, with `prompt()` for optional context notes. URL-only bookmark fallback for iOS Shortcuts. Delivered on OAuth success page and dedicated `/bookmarklet` page.
 
+### "Save to Brain" iOS Shortcut (share sheet integration)
+
+The desktop bookmarklet doesn't work on mobile Safari. The Web Share Target API is [not supported by Safari/WebKit](https://bugs.webkit.org/show_bug.cgi?id=194593), so a PWA can't appear in the iOS share sheet. An iOS Shortcut is the right tool — it appears natively in the share sheet, calls `POST /api/clip` with a stored bearer token, and shows a success notification.
+
+**Key pieces:** Pre-built iOS Shortcut distributed via iCloud link, `/save` page (mobile-optimized token display + install link), optional context note prompt, token stored in `Shortcuts/Brainstem/token.txt`.
+
+**Status:** PRD complete — see [docs/prd-ios-shortcut.md](prd-ios-shortcut.md).
+
+### ~~Docs & page content refresh~~ ✅ DONE
+
+Updated all user-facing pages and docs to reflect email-to-brain (v5.0), web clipper (v5.2), and full 8-tool set. Fixed stale "won't be shown again" warning on OAuth success page. Added "Ways to Save" section to homepage, setup success page, and README. Updated flow diagram in content.md and sync diagram in README to show all input modalities. `/bookmarklet` iOS Shortcut section left as-is (being replaced by `/save` page in separate work). Note: homepage `/diagram.png` is a static PNG — the Mermaid update in content.md needs a manual re-render.
+
+### Periodic repo reconciliation (stale file cleanup)
+
+Sync is entirely webhook-driven. If a webhook delivery is missed (GitHub outage, Worker error, misconfiguration), file deletions and moves are silently lost — stale R2 objects and AI Search vectors persist indefinitely. There is no catch-up mechanism.
+
+**Fix (two parts):**
+1. Make `syncRepo` diff R2 contents against the current repo tarball and delete stale objects
+2. Add a Cloudflare Cron Trigger (e.g., daily) that runs `syncRepo` for all active installations, so drift is automatically corrected
+
+Without part 2, part 1 only helps on manual `/debug/sync` calls — which is not a real safety net.
+
 ### X (Twitter) Bookmarks sync
 
 Deferred indefinitely. X API Basic tier costs $200/month, has a 15k tweet/month read quota, 800-bookmark ceiling, and is polling-only. Cost/value ratio is poor. Individual tweets can be saved via the bookmarklet. Revisit if X ships affordable API pricing.
