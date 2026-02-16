@@ -44,6 +44,7 @@
 
 ## Activity Log
 
+- **2026-02-16:** nuts-bolts-ai-literacy-paper - Decision made: going with two-part series, but only doing Part 1 now. Single submission vs two-part decision is resolved.
 - **2026-02-10:** nuts bolts - Completed comprehensive project analysis. Notion draft is ~5x too long (~3000 words vs ~550 word budget). Recommended cutting from 7+ objectives to 1-2 core objectives per editor Dr. Mahan's guidance. Proposed structure: Page 1 = source-grounded AI concept + RACE framework, Page 2 = AI literacy modeling + Three V's + Practical Pearls. Recommended Recraft.ai Pro for custom vector icons with Noun Project for standard icons. Created 10 specific icon generation prompts. Full analysis document saved to project folder. Key decision needed: single submission vs Part 1/Part 2 series.
 - **2026-02-10:** nuts-bolts-ai-literacy-paper - Writing is essentially done. Currently in formatting and graphic design iteration phase. Working on infographic/visual design today.
 - **2026-02-02:** Nuts & Bolts AI Literacy Paper: Add to-do - find AI infographic tool (evaluate Napkin AI, Beautiful.ai, Canva Magic Design, Visme AI Designer, or Adobe Firefly)
