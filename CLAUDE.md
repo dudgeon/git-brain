@@ -599,6 +599,8 @@ Both call `deleteInstallation(env, installationUuid)` which:
 
 11. **Turndown `document not defined` in Workers**: The clip handler called `turndown.turndown(html)` server-side, but Turndown uses `document.createElement` internally. Workers have no browser DOM. Fix: moved HTML→markdown conversion to the bookmarklet (client-side), sending `content` instead of `html` to the API.
 
+12. **Stale diagram served after deploy (browser cache)**: The homepage `<img src="/diagram.png">` had `Cache-Control: public, max-age=86400` (24 hours). After updating the diagram file and redeploying, browsers kept showing the old V1 diagram (no email/web clipper). The Worker was serving the correct file — the browser cache was stale. Fix: added cache-busting query parameter (`/diagram.png?v=2`). Future deploys that update static assets need to bump the version parameter.
+
 ## Connecting to Claude
 
 ### Getting a Token

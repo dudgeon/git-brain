@@ -1336,7 +1336,7 @@ function handleHomepage(env: Env): Response {
 
     <p>Brainstem connects your personal knowledge base on GitHub to AI chat clients like Claude Mobile, giving your AI fast, simple access to your notes and context. Currently supports <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.yaml</code>, <code>.yml</code>, <code>.toml</code>, <code>.rst</code>, and <code>.adoc</code> files.</p>
 
-    <img src="/diagram.png" alt="How Brainstem works" style="width: 100%; height: auto; margin: 1.5rem 0; border-radius: 8px;">
+    <img src="/diagram.png?v=2" alt="How Brainstem works" style="width: 100%; height: auto; margin: 1.5rem 0; border-radius: 8px;">
 
     <h2>How it works</h2>
 
@@ -1370,6 +1370,20 @@ function handleHomepage(env: Env): Response {
     <div class="step">
       <p><span class="step-title">Inbox tools</span></p>
       <p class="muted">Ask your AI to save notes, reminders, or thoughts directly via <code>brain_inbox</code> or <code>brain_inbox_save</code>.</p>
+    </div>
+
+    <h2>Tools</h2>
+    <p class="muted">Brainstem exposes eight tools over MCP. Your AI client discovers them automatically when connected.</p>
+
+    <div style="margin-top: 0.75rem;">
+      <p style="margin-bottom: 0.5rem;"><code>search_brain</code> <span class="muted">&mdash; Semantic search across your knowledge base. Returns relevant passages with source links.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>get_document</code> <span class="muted">&mdash; Retrieve the full contents of a file by path.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>list_recent</code> <span class="muted">&mdash; List recently modified files, optionally filtered by path prefix.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>list_folders</code> <span class="muted">&mdash; Browse the folder structure of your knowledge base.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>brain_inbox</code> <span class="muted">&mdash; Save a note with an interactive preview (Claude Desktop).</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>brain_inbox_save</code> <span class="muted">&mdash; Save a note directly to the inbox (all clients).</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>brain_account</code> <span class="muted">&mdash; Set up email-to-brain forwarding and vanity aliases.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>about</code> <span class="muted">&mdash; Information about your Brainstem instance and available tools.</span></p>
     </div>
 
     <p class="muted" style="text-align: center; margin-top: 1.5rem;">That's it. No complex setup. Push to GitHub, forward an email, clip a webpage, or ask your AI to take a note &mdash; it's all searchable within a minute.</p>

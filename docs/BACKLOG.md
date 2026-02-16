@@ -79,7 +79,7 @@ The desktop bookmarklet doesn't work on mobile Safari. The Web Share Target API 
 
 ### ~~Docs & page content refresh~~ ✅ DONE
 
-Updated all user-facing pages and docs to reflect email-to-brain (v5.0), web clipper (v5.2), and full 8-tool set. Fixed stale "won't be shown again" warning on OAuth success page. Added "Ways to Save" section to homepage, setup success page, and README. Updated flow diagram in content.md and sync diagram in README to show all input modalities. `/bookmarklet` iOS Shortcut section left as-is (being replaced by `/save` page in separate work). Note: homepage `/diagram.png` is a static PNG — the Mermaid update in content.md needs a manual re-render.
+Updated all user-facing pages and docs to reflect email-to-brain (v5.0), web clipper (v5.2), and full 8-tool set. Fixed stale "won't be shown again" warning on OAuth success page. Added "Ways to Save" section to homepage, setup success page, and README. Updated flow diagram in content.md and sync diagram in README to show all input modalities. `/bookmarklet` iOS Shortcut section left as-is (being replaced by `/save` page in separate work). Homepage now includes Tools section (all 8 MCP tools). Diagram cache-busting fixed (`/diagram.png?v=2`) — V2 diagram now matches GitHub README. Created `.claude/skills/update-site/` skill for future site updates.
 
 ### Periodic repo reconciliation (stale file cleanup)
 
