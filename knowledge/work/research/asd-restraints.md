@@ -3,16 +3,17 @@ title: ASD Restraints Research Project
 type: research
 aliases: [ASD restraints, autism restraints, Sunhee restraints, JADD paper]
 collaborators: [Sunhee Chung, David Sheridan, Beech Burns]
-status: under-review
+status: revision-requested
 position: 1st-author
 theme: mental-health
 journal: JADD
 permalink: research/asd-restraints-research-project
+blocked: false
 ---
 
 # Autism Spectrum Disorder and Restraint Use in Pediatric Emergency Department Patients
 
-**Status:** Under Review (JADD)  
+**Status:** Revision Requested (JADD) — Major Revision, ~80% complete  
 **Position:** 1st author (lead and corresponding)  
 **Theme:** Mental Health & Behavioral
 
@@ -23,7 +24,7 @@ permalink: research/asd-restraints-research-project
 | Target/Current Journal | Journal of Autism and Developmental Disorders (JADD) |
 | MS# | JADD-D-26-00050R1 |
 | Submitted | January 12, 2026 (revision) |
-| Decision | **Under Review** (as of January 16, 2026) |
+| Decision | **Major Revision** (received ~Feb 16, 2026) |
 
 ## Co-Authors
 
@@ -38,9 +39,9 @@ permalink: research/asd-restraints-research-project
 
 ## Current Status
 
-**✅ UNDER REVIEW** (as of January 16, 2026)
+**📝 MAJOR REVISION** (received ~February 16, 2026)
 
-Successfully completed all editor-requested formatting changes and resubmitted January 12, 2026. Manuscript passed editorial screening and entered peer review January 16, 2026. Now awaiting reviewer feedback.
+Reviewer feedback received — all requested changes are achievable. Currently ~80% done with edits. Target resubmission within 10 days (~February 26, 2026).
 
 ## Key Decisions
 
@@ -56,8 +57,9 @@ Successfully completed all editor-requested formatting changes and resubmitted J
 - [x] Complete all editor-requested formatting changes
 - [x] Create response to reviewers document
 - [x] Resubmit to JADD via Editorial Manager
-- [ ] **Await peer review feedback** ← Current stage
-- [ ] Respond to reviewer comments (if revisions requested)
+- [x] Await peer review feedback
+- [ ] **Complete remaining ~20% of revision edits** ← Current stage
+- [ ] Resubmit revised manuscript (~Feb 26, 2026)
 - [ ] Final acceptance and publication
 
 ## Timeline
@@ -73,14 +75,15 @@ Successfully completed all editor-requested formatting changes and resubmitted J
 - **January 9, 2026**: Final JADD submission package completed
 - **January 12, 2026**: Editor feedback received - revise before review
 - **January 12, 2026**: All editor-requested revisions completed and resubmitted
-- **January 16, 2026**: ✅ **Status changed to "Under Review"** - entered peer review
+- **January 16, 2026**: Status changed to "Under Review" - entered peer review
+- **~February 16, 2026**: Major revision decision received — all changes achievable
+- **~February 26, 2026**: Target resubmission date
 
 ## Activity Log
 
-- **2026-02-16:** ASD Restraints - Received major revision decision from JADD. All reviewer changes are achievable. Currently ~80% done with edits. Expect to resubmit within 10 days (~Feb 26). Status: revision-requested, not blocked.
-- **2026-02-09:** ASD Restraints - UNDO last update. That update about Clinical Pediatrics resubmission was for the wrong project. ASD Restraints is still under review at JADD with no changes.
-- **2026-02-09:** ASD prescribing - resubmitted to Clinical Pediatrics on Feb 9 after addressing editorial requests (added educational objectives, completed authorship form). Received confirmation of editorial review. Manuscript ID: CLP-BR-26-081. Expected timeline: 3-6 weeks for reviewer assignment, then additional 3-6 weeks for decision. Estimated first decision: April-May 2026.
-- **2026-02-04:** ASD Restraints Research Project - Correction: the "revision-requested" status was a test update and did not actually occur. The paper is currently submitted and awaiting feedback from the journal. Status should be under-review. → _Status: under-review_
+- **2026-02-16:** Major revision decision received from JADD. All reviewer changes are achievable and promising. Currently ~80% done with edits. Target resubmit within 10 days (~Feb 26). Status: revision-requested, not blocked.
+- **2026-02-09:** UNDO erroneous update. Clinical Pediatrics resubmission was for the wrong project. ASD Restraints is still at JADD.
+- **2026-02-04:** Correction: previous "revision-requested" status was a test update. Paper was under review at JADD.
 
 ## Notes
 
@@ -111,21 +114,3 @@ JADD selected over AJEM for:
 2. Better alignment with implications for autism-specific interventions
 3. Brief Report format accommodates comprehensive findings while maintaining focus
 4. Peer reviewers with autism expertise will strengthen manuscript
-
-### Editor Feedback & Revision Success
-Editor required standard JADD formatting compliance before peer review (structured abstract, reference formatting, figure/table placement, font sizes, anonymous response document). All changes were formatting-only with no content revisions requested, suggesting strong initial editorial assessment. **Manuscript successfully passed editorial screening and entered peer review within 4 days of resubmission** - positive indicator of manuscript quality and editor satisfaction with revisions.
-
-### Technical Documentation
-- **Primary analysis script**: 20251117_Final_ASD_Restraint_Script.R
-- **Forest plot development**: Multiple iterations using forestploter/forester packages
-- **Publication-ready visualizations**: NEJM-style forest plots with hierarchical age categories, color-coded by restraint type (purple for physical, tan for chemical)
-- **Data validation**: Age range 5.0-17.9 years, psychiatric inclusion criteria verified, medication routes cross-checked
-
-### References - Key Studies
-1. Hoffman et al. (Hospital Pediatrics 2024) - Chemical restraint quality measures, validated definition
-2. Iannuzzi et al. (2015) - ASD patients frequent ED utilizers
-3. Kalb et al. (2012) - Psychiatric-related ED visits in ASD
-4. EIIC/TREKK guidelines (2024) - Pediatric agitation algorithm
-5. Picci & Scherf (2015) - Two-hit model of autism, adolescence as second hit
-6. McGonigle et al. (2014) - ASD agitation management in ED
-7. Luccarelli et al. (2021) - Pediatric physical restraint coding, 6.8% rate in ASD hospitalizations
