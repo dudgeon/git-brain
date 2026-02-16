@@ -77,6 +77,7 @@ Successfully completed all editor-requested formatting changes and resubmitted J
 
 ## Activity Log
 
+- **2026-02-16:** ASD Restraints - Received major revision decision from JADD. All reviewer changes are achievable. Currently ~80% done with edits. Expect to resubmit within 10 days (~Feb 26). Status: revision-requested, not blocked.
 - **2026-02-09:** ASD Restraints - UNDO last update. That update about Clinical Pediatrics resubmission was for the wrong project. ASD Restraints is still under review at JADD with no changes.
 - **2026-02-09:** ASD prescribing - resubmitted to Clinical Pediatrics on Feb 9 after addressing editorial requests (added educational objectives, completed authorship form). Received confirmation of editorial review. Manuscript ID: CLP-BR-26-081. Expected timeline: 3-6 weeks for reviewer assignment, then additional 3-6 weeks for decision. Estimated first decision: April-May 2026.
 - **2026-02-04:** ASD Restraints Research Project - Correction: the "revision-requested" status was a test update and did not actually occur. The paper is currently submitted and awaiting feedback from the journal. Status should be under-review. → _Status: under-review_
