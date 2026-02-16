@@ -1,6 +1,6 @@
 # Product Backlog
 
-**Last updated:** 2026-02-09
+**Last updated:** 2026-02-16
 
 ---
 
@@ -104,6 +104,16 @@ Installations are only linked to users on first OAuth (by matching GitHub login)
 ### Multi-repo support
 
 GitHub Apps can be installed on multiple repos, but only the first repo is synced. Supporting multiple repos requires storing the repo list, prefixing R2 paths by repo, and scoping MCP tools per repo.
+
+### Chunking strategy improvements → [ADR-010](adr/010-chunking-strategy.md)
+
+AI Search handles all chunking automatically with default settings. Chunks from later in a document lose document-level context (path, domain, frontmatter). Three improvements identified:
+
+1. **Dashboard tuning:** Adjust chunk size (~256 tokens) and overlap (~15-20%) for the short-document workload
+2. **Frontmatter injection at sync:** Prepend `path` + `domain` YAML frontmatter to files that lack it before R2 storage
+3. **Post-retrieval enrichment:** Fetch document headers from R2 and prepend to search result chunks before returning to Claude
+
+Phases are independent. Phase 1 requires no code. See ADR-010 for full analysis.
 
 ### AI Search path filtering
 
@@ -229,4 +239,5 @@ Items completed in v4.0-v4.3, for changelog reference:
 - [ADR-004: MCP Apps UI](adr/004-mcp-apps-ui.md)
 - [ADR-008: Email Input](adr/008-email-input.md)
 - [ADR-009: MCP Apps Compatibility](adr/009-mcp-apps-compatibility.md)
+- [ADR-010: Chunking Strategy](adr/010-chunking-strategy.md)
 - [CLAUDE.md](../CLAUDE.md)
