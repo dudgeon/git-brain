@@ -200,11 +200,12 @@ Set in `wrangler.toml` under `[vars]`:
 
 All MCP connections require a bearer token from OAuth. Transport is Streamable HTTP (ADR-009; previously SSE). The legacy `/mcp` endpoint and workers.dev domain have been removed (ADR-002).
 
-### Setup & Webhooks
+### Setup, Policy & Webhooks
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/setup` | GET | Landing page with "Connect Repository" button |
 | `/setup/callback` | GET | GitHub App installation callback |
+| `/privacy` | GET | Privacy policy page |
 | `/webhook/github` | POST | GitHub webhook receiver |
 
 ### API Endpoints (require bearer token)
@@ -651,6 +652,16 @@ The MCP server can load a `_brain_summary.json` file from R2 to enrich the `sear
 The summary is explicitly framed as **non-exhaustive** in the tool description to prevent Claude from thinking "topic X isn't in the summary, so I shouldn't search."
 
 ## Current Status
+
+**v5.3 — ChatGPT App Submission Readiness (Phase 1):**
+- ✅ MCP tool annotations on all 8 tools (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)
+- ✅ Search result path stripping: `r.filename` no longer leaks `brains/{uuid}/` R2 prefix
+- ✅ Tool descriptions cleaned for ChatGPT submission: removed model-manipulation language, platform-neutral `about` output
+- ✅ Privacy policy page at `https://brainstem.cc/privacy` (linked from homepage footer)
+- ✅ `scopes_supported` added to `/.well-known/oauth-protected-resource`
+- ✅ OAuth compatibility verified: DCR accepts ChatGPT redirect URIs, PKCE S256, auth server metadata complete
+- ✅ ADR-004 / ADR-005 gap analysis complete; task plan at `docs/tasks/003-chatgpt-app.md`
+- Remaining: OpenAI account setup (manual), reviewer demo account, developer mode testing, submission
 
 **v5.2 — Web Clipping (Bookmarklet + iOS Shortcut):**
 - ✅ `POST /api/clip` REST endpoint: accepts `{ url, title, content?, context? }`, saves to brain inbox

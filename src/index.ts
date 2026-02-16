@@ -262,6 +262,7 @@ export class HomeBrainMCP extends McpAgent<Env> {
       "about",
       "Get information about Git Brain and what this MCP server does.",
       {},
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async () => {
         if (!this.r2Prefix) {
           return {
@@ -289,9 +290,9 @@ Once connected with your personalized URL, you'll have access to search, documen
           content: [
             {
               type: "text" as const,
-              text: `# Git Brain
+              text: `# Brainstem
 
-Git Brain exposes private GitHub repos as remote MCP servers, making your personal knowledge base accessible to Claude.
+Brainstem connects your private GitHub repos to AI assistants as a searchable personal knowledge base.
 
 ## How It Works
 - Content syncs from GitHub to Cloudflare R2 storage
@@ -299,22 +300,15 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
 - MCP server exposes tools to search, browse, and read content
 
 ## Available Tools
-- **search_brain**: Semantic search across all content — use this for questions about the user's personal info, family, projects, or anything unlikely to be in public sources
+- **search_brain**: Semantic search across all content
 - **get_document**: Read a specific file by path
 - **list_recent**: See recently modified files
 - **list_folders**: Browse the folder structure
 - **brain_inbox** / **brain_inbox_save**: Save notes to the user's inbox
-- **brain_account**: Set up email-to-brain forwarding, verify sender addresses, claim vanity aliases (e.g. "name@brainstem.cc")
+- **brain_account**: Set up email-to-brain forwarding, verify sender addresses, claim vanity aliases
 
 ## Email Input
-Forward emails to your brainstem address to save them as inbox notes. IMPORTANT: When the user asks about email setup, forwarding, or email handling for brainstem — use the brain_account tool (action: "status" to start), do NOT search the brain for email-related docs.
-
-## Prompts (Slash Commands)
-If you need to explicitly invoke a tool, these prompts are available:
-- **brain_search**: Explicitly search the knowledge base (invokes search_brain tool)
-- **brain_inbox**: Add a quick note (invokes brain_inbox tool)
-
-Note: When the user asks about their personal information, family, projects, or preferences — use the search_brain tool. You have been granted access to search on their behalf.`,
+Forward emails to your brainstem address to save them as inbox notes. Use the brain_account tool to configure email forwarding.`,
             },
           ],
         };
@@ -379,11 +373,9 @@ Note: When the user asks about their personal information, family, projects, or 
    * Combines hard-coded base with dynamic summary if available
    */
   private buildSearchDescription(): string {
-    // Lead with purpose and access clarification
     let description =
-      `Search the user's personal knowledge base. You have been granted access to use this on their behalf — do not hesitate to search when relevant.`;
+      `Search the user's personal knowledge base. You have been granted access to use this on their behalf.`;
 
-    // When to use: semantic categories, not just trigger phrases
     description +=
       `\n\nUSE THIS TOOL FOR:` +
       `\n• Information about the user, their family, projects, or preferences that is unlikely to be in your training data or public web sources` +
@@ -391,7 +383,6 @@ Note: When the user asks about their personal information, family, projects, or 
       `\n• Anything the user refers to as "the brain", "my brain", "brainstem", "my notes", or "my knowledge base"` +
       `\n• Questions about the user's personal life, family details, ongoing projects, saved reference materials`;
 
-    // Add dynamic topics if summary is available
     if (this.brainSummary?.domains?.length) {
       description += `\n\nKnowledge domains: ${this.brainSummary.domains.join(", ")} (non-exhaustive).`;
     }
@@ -400,7 +391,6 @@ Note: When the user asks about their personal information, family, projects, or 
       description += `\n\nSample topics: ${this.brainSummary.topics.slice(0, 10).join(", ")} (the knowledge base contains more).`;
     }
 
-    // What this is NOT — specific and brief
     description +=
       `\n\nDO NOT USE FOR: General knowledge (Wikipedia-style facts), current events, or information available in public sources. ` +
       `This contains only what the user has personally saved.`;
@@ -438,6 +428,7 @@ Note: When the user asks about their personal information, family, projects, or 
           .default(5)
           .describe("Maximum number of results (default: 5, max: 20)"),
       },
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async ({ query, limit }) => {
         try {
           const maxResults = Math.min(limit ?? 5, 20);
@@ -472,11 +463,13 @@ Note: When the user asks about their personal information, family, projects, or 
           }
 
           // Format results with source links
+          // Strip R2 prefix (brains/{uuid}/) from filenames for display and URL building
           const output = response.data
             .map((r, i) => {
               const contentText = r.content.map((c) => c.text).join("\n");
-              const sourceLink = this.getSourceUrl(r.filename);
-              return `## ${i + 1}. ${r.filename}\n**Score:** ${r.score.toFixed(2)} | **Source:** ${sourceLink}\n\n${contentText}`;
+              const displayPath = this.r2Prefix ? r.filename.replace(this.r2Prefix, "") : r.filename;
+              const sourceLink = this.getSourceUrl(displayPath);
+              return `## ${i + 1}. ${displayPath}\n**Score:** ${r.score.toFixed(2)} | **Source:** ${sourceLink}\n\n${contentText}`;
             })
             .join("\n\n---\n\n");
 
@@ -514,6 +507,7 @@ Note: When the user asks about their personal information, family, projects, or 
       {
         path: z.string().describe("Path to the document (e.g., 'projects/cnc/notes.md')"),
       },
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async ({ path }) => {
         try {
           // Normalize path - remove leading slash if present
@@ -577,6 +571,7 @@ Note: When the user asks about their personal information, family, projects, or 
           .optional()
           .describe("Optional path prefix to filter results"),
       },
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async ({ limit, path_prefix }) => {
         try {
           const maxFiles = Math.min(limit ?? 10, 50);
@@ -669,6 +664,7 @@ Note: When the user asks about their personal information, family, projects, or 
       "brain_inbox",
       {
         description: "Preview a note before saving to the inbox (UI hosts only). In UI-capable hosts, shows an interactive composer with editing and countdown before save. For non-UI hosts or AI agents, use brain_inbox_save instead to save notes directly.",
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         inputSchema: {
           title: z
             .string()
@@ -706,6 +702,7 @@ Note: When the user asks about their personal information, family, projects, or 
       "brain_inbox_save",
       {
         description: "Save a note to the brain inbox. Creates a .md file in the inbox/ folder, writes to both R2 and the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder. Provide a short title (used as filename) and the markdown content.",
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         inputSchema: {
           title: z.string().describe("Short title for the note (used as filename, e.g. 'grocery-list')"),
           content: z.string().describe("The markdown content of the note"),
@@ -770,8 +767,7 @@ Note: When the user asks about their personal information, family, projects, or 
   private registerBrainAccount() {
     this.server.tool(
       "brain_account",
-      `IMPORTANT: When the user asks to set up email, configure email forwarding, or anything about sending emails to their brain — call this tool IMMEDIATELY with action "status" to start. Do NOT search the brain first.` +
-      `\n\nThis tool sets up and manages email-to-brain forwarding. The brainstem server has built-in email processing — users forward emails to their @brainstem.cc address and they appear as inbox notes.` +
+      `Set up and manage email-to-brain forwarding. Users forward emails to their @brainstem.cc address and they appear as inbox notes.` +
       `\n\nUSE THIS TOOL FOR:` +
       `\n• Setting up email forwarding to the brain inbox` +
       `\n• Verifying a personal email address as an authorized sender` +
@@ -790,6 +786,7 @@ Note: When the user asks about their personal information, family, projects, or 
         email: z.string().email().optional().describe("Email address (for request_email, remove_email)"),
         alias: z.string().optional().describe("Vanity alias name without @brainstem.cc (for check_alias, request_alias)"),
       },
+      { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       async ({ action, email, alias }) => {
         const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
         if (!installationUuid) {
@@ -1004,6 +1001,7 @@ Note: When the user asks about their personal information, family, projects, or 
           .default("")
           .describe("Path to list (empty or '/' for root)"),
       },
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async ({ path }) => {
         try {
           // Normalize user-provided path
@@ -1198,6 +1196,7 @@ function handleProtectedResourceMetadata(): Response {
   return new Response(JSON.stringify({
     resource: "https://brainstem.cc",
     authorization_servers: ["https://brainstem.cc"],
+    scopes_supported: [],
     bearer_methods_supported: ["header"],
   }), {
     headers: {
@@ -1404,7 +1403,121 @@ function handleHomepage(env: Env): Response {
     </p>
 
     <div class="footer">
-      <p>Brainstem is open source. <a href="https://github.com/dudgeon/git-brain">View on GitHub</a></p>
+      <p>Brainstem is open source. <a href="https://github.com/dudgeon/git-brain">View on GitHub</a> · <a href="/privacy">Privacy Policy</a></p>
+    </div>
+  </div>
+</body>
+</html>`;
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+/**
+ * Handle /privacy - Privacy policy
+ */
+function handlePrivacyPolicy(): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Brainstem</title>
+  <style>${SITE_STYLES}</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <p class="muted">Last updated: February 16, 2026</p>
+
+    <p>Brainstem ("we", "us", "our") is a service that connects your private GitHub repositories to AI chat clients as a searchable knowledge base. This policy describes how we collect, use, and protect your information.</p>
+
+    <h2>Information We Collect</h2>
+
+    <h3>Account Information</h3>
+    <p>When you connect via GitHub OAuth, we collect:</p>
+    <ul>
+      <li><strong>GitHub username and user ID</strong> &mdash; to identify your account</li>
+      <li><strong>GitHub OAuth access token</strong> &mdash; to access your authorized repositories</li>
+    </ul>
+
+    <h3>Repository Content</h3>
+    <p>When you install the Brainstem GitHub App on a repository, we sync and store text files from that repository. Supported file types include <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.yaml</code>, <code>.yml</code>, <code>.toml</code>, <code>.rst</code>, and <code>.adoc</code>. Binary files, code files, and sensitive files (e.g., <code>.env</code>, credentials) are excluded.</p>
+
+    <h3>Session Data</h3>
+    <p>We create session tokens when you authenticate. Sessions contain a unique ID, your user ID, and an expiration date.</p>
+
+    <h3>Email Data</h3>
+    <p>If you set up email forwarding, we store:</p>
+    <ul>
+      <li>Your verified sender email addresses</li>
+      <li>Your brainstem email aliases</li>
+      <li>A log of received emails (sender, recipient, subject, status) retained for 7 days</li>
+    </ul>
+
+    <h3>Web Clips</h3>
+    <p>When you use the bookmarklet or iOS Shortcut, we store the article URL, title, and extracted content as a note in your brain.</p>
+
+    <h3>Usage Logs</h3>
+    <p>We log GitHub webhook events (event type, installation ID, status) for debugging. Webhook logs are retained briefly and do not contain repository content.</p>
+
+    <h2>How We Use Your Information</h2>
+    <ul>
+      <li><strong>Providing the service</strong> &mdash; syncing files, indexing for search, serving MCP tool responses</li>
+      <li><strong>Authentication</strong> &mdash; verifying your identity and authorizing access to your data</li>
+      <li><strong>Email processing</strong> &mdash; routing and storing forwarded emails as inbox notes</li>
+      <li><strong>Debugging</strong> &mdash; diagnosing sync failures or webhook delivery issues</li>
+    </ul>
+    <p>We do not use your data for advertising, analytics, model training, or any purpose beyond operating the Brainstem service.</p>
+
+    <h2>Infrastructure and Data Storage</h2>
+    <p>Your data is stored on Cloudflare infrastructure:</p>
+    <ul>
+      <li><strong>Cloudflare R2</strong> &mdash; file storage (encrypted at rest with AES-256-GCM, Cloudflare-managed keys)</li>
+      <li><strong>Cloudflare D1</strong> &mdash; account records, sessions, email configuration</li>
+      <li><strong>Cloudflare AI Search</strong> &mdash; semantic search index over your files</li>
+    </ul>
+    <p>All data is encrypted in transit (TLS) and at rest. The platform operator has technical access to stored content for operational purposes.</p>
+
+    <h2>Data Sharing</h2>
+    <p>We do not sell, rent, or share your data with third parties. Your data is only accessed by:</p>
+    <ul>
+      <li><strong>You</strong> &mdash; via MCP tools in your AI client</li>
+      <li><strong>Cloudflare</strong> &mdash; as our infrastructure provider (subject to <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a>)</li>
+      <li><strong>GitHub</strong> &mdash; we use GitHub's API to read your repository content (subject to <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>)</li>
+    </ul>
+
+    <h2>Data Retention and Deletion</h2>
+    <p>Your data is retained as long as you have the Brainstem GitHub App installed. When you uninstall the GitHub App:</p>
+    <ul>
+      <li>All synced files are deleted from R2</li>
+      <li>Your installation record is deleted from D1</li>
+      <li>All active sessions are revoked</li>
+      <li>Email aliases, verified senders, and email logs are deleted</li>
+      <li>AI Search vectors are removed on the next reindex</li>
+    </ul>
+    <p>Deletion is automatic and triggered by the GitHub App uninstall webhook.</p>
+
+    <h2>Your Controls</h2>
+    <ul>
+      <li><strong>Disconnect anytime</strong> &mdash; uninstall the GitHub App from your GitHub settings to trigger full data deletion</li>
+      <li><strong>Choose what to sync</strong> &mdash; only the repository you connect is synced; you control what files are in that repo</li>
+      <li><strong>Revoke access</strong> &mdash; revoke the GitHub OAuth authorization from your GitHub settings</li>
+    </ul>
+
+    <h2>Security</h2>
+    <p>We use industry-standard security measures including encrypted storage, HMAC-verified webhooks, OAuth 2.1 with PKCE, and bearer token authentication. Session tokens expire after one year.</p>
+
+    <h2>Children's Privacy</h2>
+    <p>Brainstem is not intended for use by anyone under the age of 13. We do not knowingly collect personal information from children under 13.</p>
+
+    <h2>Changes to This Policy</h2>
+    <p>We may update this policy from time to time. Changes will be posted on this page with an updated "Last updated" date.</p>
+
+    <h2>Contact</h2>
+    <p>For questions about this privacy policy or your data, contact us at <a href="mailto:privacy@brainstem.cc">privacy@brainstem.cc</a>.</p>
+
+    <hr>
+    <div class="footer">
+      <p><a href="/">Home</a> · <a href="https://github.com/dudgeon/git-brain">Source</a></p>
     </div>
   </div>
 </body>
@@ -2901,6 +3014,11 @@ export default {
     // Handle / - homepage
     if (url.pathname === "/" || url.pathname === "") {
       return handleHomepage(env);
+    }
+
+    // Handle /privacy - Privacy policy
+    if (url.pathname === "/privacy") {
+      return handlePrivacyPolicy();
     }
 
     // Handle /setup - landing page (redirects to homepage)

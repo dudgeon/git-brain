@@ -1,7 +1,7 @@
 # ADR-004: ChatGPT App Directory Listing
 
-> **Status:** Proposed
-> **Date:** 2026-02-02
+> **Status:** In Progress (Phase 1 done — tool annotations, privacy policy, OAuth compat)
+> **Date:** 2026-02-02 (updated 2026-02-16)
 > **Decision:** Evaluate and plan submission of Git Brain as a ChatGPT app via the OpenAI Apps SDK
 
 ## Context and Problem Statement

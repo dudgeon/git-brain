@@ -115,7 +115,7 @@ Your files are stored on Cloudflare R2, encrypted at rest with AES-256-GCM (Clou
 
 ### Footer
 
-Brain Stem is open source. [View on GitHub](https://github.com/dudgeon/git-brain)
+Brain Stem is open source. [View on GitHub](https://github.com/dudgeon/git-brain) · [Privacy Policy](/privacy)
 
 ### Closing
 
@@ -310,3 +310,74 @@ Authorization Cancelled
 You cancelled the GitHub authorization. You'll need to authorize to get a bearer token for your AI client.
 
 **CTA:** Try Again
+
+---
+
+## Privacy Policy (`/privacy`)
+
+### Title
+
+Privacy Policy
+
+Last updated: February 16, 2026
+
+### Introduction
+
+Brainstem ("we", "us", "our") is a service that connects your private GitHub repositories to AI chat clients as a searchable knowledge base. This policy describes how we collect, use, and protect your information.
+
+### Information We Collect
+
+**Account Information** — GitHub username and user ID (to identify your account), GitHub OAuth access token (to access your authorized repositories).
+
+**Repository Content** — Text files synced from your connected GitHub repository (`.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.toml`, `.rst`, `.adoc`). Binary files, code files, and sensitive files are excluded.
+
+**Session Data** — Session tokens with unique ID, user ID, and expiration date.
+
+**Email Data** (if email forwarding is configured) — Verified sender email addresses, brainstem email aliases, email log (sender, recipient, subject, status) retained for 7 days.
+
+**Web Clips** — Article URL, title, and extracted content saved as inbox notes.
+
+**Usage Logs** — GitHub webhook events (event type, installation ID, status) for debugging.
+
+### How We Use Your Information
+
+- Providing the service (syncing files, indexing for search, serving MCP tool responses)
+- Authentication (verifying identity and authorizing access)
+- Email processing (routing and storing forwarded emails as inbox notes)
+- Debugging (diagnosing sync failures or webhook delivery issues)
+
+We do not use your data for advertising, analytics, model training, or any purpose beyond operating the service.
+
+### Infrastructure and Data Storage
+
+Data is stored on Cloudflare infrastructure: R2 (file storage, AES-256-GCM at rest), D1 (account records, sessions, email config), AI Search (semantic search index). All data encrypted in transit (TLS) and at rest. The platform operator has technical access for operational purposes.
+
+### Data Sharing
+
+We do not sell, rent, or share data with third parties. Data is only accessed by you (via MCP tools), Cloudflare (infrastructure provider), and GitHub (API for repository access).
+
+### Data Retention and Deletion
+
+Data retained while GitHub App is installed. On uninstall: all synced files deleted from R2, installation record deleted from D1, sessions revoked, email data deleted, AI Search vectors removed.
+
+### Your Controls
+
+- Disconnect anytime by uninstalling the GitHub App
+- Choose what to sync (only the connected repository)
+- Revoke GitHub OAuth authorization from GitHub settings
+
+### Security
+
+Industry-standard measures: encrypted storage, HMAC-verified webhooks, OAuth 2.1 with PKCE, bearer token auth. Sessions expire after one year.
+
+### Children's Privacy
+
+Not intended for anyone under 13. We do not knowingly collect information from children under 13.
+
+### Changes
+
+Updates posted on this page with updated "Last updated" date.
+
+### Contact
+
+privacy@brainstem.cc

@@ -1,7 +1,7 @@
 # ADR-005: Expose Brainstem Tools as a ChatGPT App
 
-**Status:** Proposed
-**Date:** 2026-02-03
+**Status:** Deferred (tool core extraction not needed for initial submission — revisit if per-platform description overrides are needed)
+**Date:** 2026-02-03 (updated 2026-02-16)
 **Decision:** Publish Brainstem as a ChatGPT App using the Apps SDK (MCP-based), while keeping the existing MCP server as the single source of truth. Refactor tool definitions and execution into a shared core so that new tools and changes ship once and are available to both Claude MCP clients and ChatGPT Apps.
 
 ## Context

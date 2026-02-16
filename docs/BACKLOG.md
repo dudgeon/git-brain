@@ -61,6 +61,20 @@ No way to revoke a bearer token before expiry. A compromised token remains valid
 
 ## Medium — Product quality
 
+### ChatGPT App Directory submission → [ADR-004](adr/004-chatgpt-app.md), [ADR-005](adr/005-chatgpt-app.md)
+
+Publish Brainstem as a ChatGPT App in the OpenAI App Directory. The existing MCP server with OAuth/DCR/PKCE is reusable — the incremental work is tool annotations, privacy policy, auth compat, response shape audit, and submission.
+
+**Phases:**
+1. Tool annotations (`readOnlyHint`, `destructiveHint`, `openWorldHint`) on all 8 tools + response shape audit (strip internal IDs)
+2. Privacy policy at `https://brainstem.cc/privacy` + customer support contact
+3. Auth compatibility — verify ChatGPT redirect URIs accepted, create reviewer demo account
+4. OpenAI Platform account setup + developer verification (manual)
+5. Test in ChatGPT developer mode, submit for review
+6. Post-approval: publish, monitor, harden
+
+**Status:** Phase 1 done (tool annotations, response shape audit, descriptions, privacy policy, OAuth compat verified). Phase 2-3 ready (auth compat testing in ChatGPT dev mode, reviewer demo account). Phase 4+ requires manual OpenAI account setup.
+
 ### ~~Claude.ai MCP proxy `-32600` error~~ ✅ FIXED (ADR-009)
 
 Root cause: server used legacy SSE transport (`serveSSE`) while Claude.ai's proxy expects Streamable HTTP. Fix: switched to `HomeBrainMCP.serve("/mcp")` for Streamable HTTP transport. Also cleaned up tool definitions (conditional MCP Apps upgrade via `RegisteredTool.update()`, stripped SDK `execution` field). See [ADR-009](adr/009-mcp-apps-compatibility.md).
@@ -236,7 +250,10 @@ Items completed in v4.0-v4.3, for changelog reference:
 - [ADR-001: GitHub App](adr/001-github-app.md)
 - [ADR-002: Security Isolation](adr/002-security-isolation.md)
 - [ADR-003: Encryption at Rest](adr/003-encryption-at-rest.md)
-- [ADR-004: MCP Apps UI](adr/004-mcp-apps-ui.md)
+- [ADR-004a: MCP Apps UI](adr/004-mcp-apps-ui.md)
+- [ADR-004b: ChatGPT App Directory](adr/004-chatgpt-app.md)
+- [ADR-005: ChatGPT App Shared Core](adr/005-chatgpt-app.md)
+- [Tasks-003: ChatGPT App Submission](tasks/003-chatgpt-app.md)
 - [ADR-008: Email Input](adr/008-email-input.md)
 - [ADR-009: MCP Apps Compatibility](adr/009-mcp-apps-compatibility.md)
 - [ADR-010: Chunking Strategy](adr/010-chunking-strategy.md)
