@@ -89,3 +89,7 @@ Editorial feedback requested revisions before sending manuscript for full peer r
 - **November 11, 2025**: Revised manuscript resubmitted
 - **February 2026**: Peer review decision: major revision required
 - **February 2026 (target)**: Resubmit revised manuscript within one week
+
+## Activity Log
+
+- **2026-02-17:** Secure Chat - WestJEM major revision received Feb 2026. Steve handling revisions. Need follow-up info from Melinda Hartenstein re: nursing education component. Need final edits from Sunhee Chung. Target resubmission within 1 week.
