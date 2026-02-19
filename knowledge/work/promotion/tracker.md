@@ -1,3 +1,5 @@
+# knowledge/work/promotion/tracker.md
+
 ---
 title: P&T Portfolio Tracker
 type: note
@@ -11,7 +13,7 @@ permalink: promotion/tracker
 
 > **Note:** This is an operational tracker, not a CV. Detailed information lives in individual files. Ask Claude: "Generate my CV from my research files" for a current summary.
 
-**Last updated:** February 13, 2026
+**Last updated:** February 19, 2026
 
 ---
 
@@ -21,9 +23,9 @@ permalink: promotion/tracker
 |--------|--------|------------|---------|
 | Service | 2 (Substantial) | 95% | See [[promotion/service]] |
 | Teaching | 1 (Satisfactory) | 90% | See [[promotion/teaching]] |
-| Research | 1 (Satisfactory) | 85% | See individual research files |
+| Research | 1 (Satisfactory) | 88% | See individual research files |
 
-**Overall Success Probability: 85-90%**
+**Overall Success Probability: 88-92%**
 
 ---
 
@@ -41,21 +43,23 @@ Status is tracked in individual files. This is a lightweight index.
 - The Symptom Tracker — NEJM Perspectives (accepted), 1st author
 - Scene Time and Peds OHCA — Pediatr Emerg Care (accepted), Middle
 
+### Accepted / Near-Accepted
+- CT Turnaround Times — Emergency Radiology, **accepted with minor revisions** (Feb 2026), Middle author. Obert handling revisions. Counts toward P&T.
+- EHR Secure Messaging — WestJEM, **major revisions complete; submitting Feb 19**, Senior/Corresponding author. High likelihood of acceptance.
+- ASD Restraints — JADD, **major revisions ~80% complete; awaiting Sunhee final edits**, 1st author. High likelihood of acceptance.
+
 ### Under Review
-- [[research/asd-restraints]] — JADD, 1st author
-- [[research/hypothermia]] — JEM, Senior author
-- [[research/ct-turnaround]] — Emergency Radiology, Middle author
-- [[research/secure-chat]] — WestJEM, Senior/Corresponding (no change in months)
-- [[research/adolescent-si]] — Clinical Pediatrics, 1st author (MS# CLP-BR-26-081; resubmitted Feb 9 after Acad Peds rejection; decision est. April–May 2026)
+- [[research/hypothermia]] — JEM, Senior author (outcome uncertain)
+- [[research/adolescent-si]] — Clinical Pediatrics, 1st author (MS# CLP-BR-26-081; resubmitted Feb 9; decision est. April–May 2026)
 
 ### Submitting Q1-Q2 2026
 - [[research/covid-psych]] — PEC, Senior author (Steve edited draft Feb 13; back with Maya for revisions)
-- [[research/critical-care]] — Target mid-March 2026, 1st author (analysis meeting Feb 13; submit in 3-4 weeks)
-- [[research/ai-scribe]] — Annals of Emergency Medicine, 2nd author (rejected from NEJM AI and JAMIA; Jordan leading resubmission)
+- [[research/critical-care]] — Target mid-March 2026, 1st author (follow up with Skyler Kieran Feb 19 for expanded data pull)
+- [[research/ai-scribe]] — Annals of Emergency Medicine, 2nd author (Jordan leading resubmission)
 
 ### In Preparation (not yet submitting)
 - [[research/jama-peds]] — JAMA Pediatrics, Middle author (Newgard lead; awaiting his final proof for co-author sign-off)
-- [[research/nuts-bolts-ai-literacy-paper]] — Academic Pediatrics (invited), 1st author
+- [[research/nuts-bolts-ai-literacy-paper]] — Academic Pediatrics (invited), 1st author (**re-prioritized Feb 19; stagnated, needs active push**)
 - [[research/needs-assessment]] — Focus groups ongoing (final one March 19), 1st author/PI
 - [[research/ai-survey]] — IRB exemption pending, Senior author
 - [[research/callback-rct]] — Blocked on statistician, Middle author
@@ -84,17 +88,21 @@ Status is tracked in individual files. This is a lightweight index.
 | Obert Xu | Peer | ct-turnaround, critical-care |
 | Maya Singh Sharkey | Mentee (MS4, May 2026) | covid-psych |
 | Jordan Wackett | AI collaborator | ai-scribe, nuts-bolts |
+| Sunhee Chung | Collaborator | asd-restraints, secure-chat |
+| Skyler Kieran | Data analyst | critical-care |
 
 ---
 
 ## ACTION ITEMS
 
-### This Week (Feb 13, 2026)
-- [x] Edit Maya's COVID Psych draft — returned to Maya Feb 13
-- [x] Critical Care analysis meeting with Rochelle Fu, Craig, Obert, John (Feb 13)
-- [ ] Check Secure Chat peer review status (MS# 53220) — no movement in months
+### This Week (Feb 19, 2026)
+- [ ] Submit WestJEM Secure Chat revision today — final edits + point-by-point response
+- [ ] Follow up with Sunhee Chung re: ASD Restraints final edits
+- [ ] Contact Skyler Kieran for expanded Critical Care data pull (ICU stay + procedure codes)
+- [ ] Identify next concrete step for Nuts & Bolts to restart momentum
 
 ### February–March 2026
+- [ ] ASD Restraints: complete final edits once Sunhee returns, resubmit (~Feb 26 target)
 - [ ] Critical Care: finalize analysis plan, write manuscript, target submission mid-March
 - [ ] JAMA Peds: await Newgard final proof, then co-author sign-off
 - [ ] AI Scribe: Jordan resubmits to Annals of EM
@@ -136,25 +144,39 @@ Status is tracked in individual files. This is a lightweight index.
 
 ## STRATEGIC NOTES
 
-### Projection to P&T (updated Feb 13, 2026)
-- **Current published/accepted (peer-reviewed):** 7 (+ 1 NEJM Perspectives)
-- **Under review:** 5 (ASD/JADD, Adolescent SI/Clin Peds, Hypothermia/JEM, CT/Emerg Radiol, Secure Chat/WestJEM)
+### Authorship Note (Feb 2026)
+At OHSU, senior authorship carries equal or greater weight than first authorship. This meaningfully strengthens Steve's portfolio, as several key papers are senior-author positions (Secure Chat/WestJEM, COVID Psych/PEC, Hypothermia/JEM, AI Survey, Needs Assessment).
+
+### Projection to P&T (updated Feb 19, 2026)
+- **Current published/accepted (peer-reviewed):** 9 (includes CT Turnaround accepted Feb 2026)
+- **Near-certain to accept (revisions in progress):** 2 (Secure Chat, ASD Restraints)
+- **Under review:** 2 (Hypothermia/JEM, Adolescent SI/Clin Peds)
 - **Submitting Q1-Q2 2026:** 3 (COVID Psych, Critical Care, AI Scribe)
 - **In preparation:** 6 (JAMA Peds, Nuts & Bolts, Needs Assessment, AI Survey, Callback RCT, PICU Tiered)
-- **Pipeline total:** ~14 papers under review + submitting + in prep
-- **Projected at P&T:** 14-16 (assumes ~65% acceptance from pipeline)
+- **Conservative projected total at P&T:** 14-15
+- **Optimistic projected total at P&T:** 16-18
 - **Institutional median:** 15
+
+### First/Senior Author Count (high-value for P&T)
+Published/accepted: AI Four-Letter Word (1st), Symptom Tracker (1st), CT Turnaround (middle — not counted)
+Near-certain: Secure Chat (senior), ASD Restraints (1st)
+Under review: Adolescent SI (1st), Hypothermia (senior)
+Submitting soon: COVID Psych (senior), Critical Care (1st)
+In prep: Nuts & Bolts (1st), Needs Assessment (1st)
+**Projected first/senior author total: ~10, well above institutional median of 4-5**
 
 ### Strengths
 - Service clearly at Substantial level (2 points locked in)
-- 10+ first/senior author papers exceeds benchmark (median 4-5)
+- First/senior author count ~10 projected — well above median benchmark of 4-5
 - NEJM publication provides quality signal
 - Four coherent research themes
+- Strong Q1 2026 momentum (CT accepted, Secure Chat submitting, ASD near complete)
 
 ### Risks
-- Currently below median, need strong Q1-Q2 2026
-- Dependent on ~65% acceptance rate
-- Some early papers are middle-author positions
+- Currently at 9 published/accepted, need ~6 more to reach median of 15
+- Dependent on Q1-Q2 2026 execution, particularly Nuts & Bolts and Critical Care
+- Hypothermia outcome uncertain
+- Some pipeline papers are middle-author and carry less weight
 
 ---
 
