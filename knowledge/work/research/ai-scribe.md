@@ -38,6 +38,7 @@ permalink: research/ai-scribe
 
 ## Activity Log
 
+- **2026-02-19:** AI Scribe Verbal Anchoring - status change to in-preparation. Rejected from both NEJM AI and JAMIA. Jordan Wackett leading resubmission to Annals of Emergency Medicine. Not currently under review anywhere.
 - **2026-02-13:** ai-scribe - REJECTED from JAMIA (Journal of the American Medical Informatics Association). Previously rejected from NEJM AI. Will be resubmitted to Annals of Emergency Medicine. Jordan Wackett is lead on resubmission. Status: in-preparation, needs resubmission to Annals of EM. → _Status: revision-requested_
 - **2026-02-12:** CORRECTION: Paper was also rejected from JAMIA (submitted Jan 31, 2026). Now pivoting to submit as perspective piece to Annals of Emergency Medicine. Status changed to in-preparation.
 - **2026-02-04:** Jordan submitted to JAMIA as a Perspective on January 31, 2026.
