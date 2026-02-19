@@ -92,4 +92,5 @@ Editorial feedback requested revisions before sending manuscript for full peer r
 
 ## Activity Log
 
+- **2026-02-19:** EHR Secure Messaging Study - Resubmitted to WestJEM on Feb 19, 2026. Point-by-point response completed. Now waiting on editor response. Status: blocked/under-review. No further action needed from Steve at this time.
 - **2026-02-17:** Secure Chat - WestJEM major revision received Feb 2026. Steve handling revisions. Need follow-up info from Melinda Hartenstein re: nursing education component. Need final edits from Sunhee Chung. Target resubmission within 1 week.
