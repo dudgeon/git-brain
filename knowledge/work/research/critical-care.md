@@ -82,6 +82,7 @@ Finalized study aims as purely descriptive (February 3, 2026). Emailed Rochelle 
 
 ## Activity Log
 
+- **2026-02-19:** Critical Care Billing - Follow up with Skyler Kieran today (Feb 19) to request expanded data pull including ICU stay and procedure codes per Craig's feedback.
 - **2026-02-17:** Critical Care Billing - Steve needs to contact Skyler Kieran for expanded data pull including ICU stay and procedure codes (per Craig's 2/9 feedback). Also needs to follow up with Rochelle Fu on analysis plan after 2/13 meeting. Manuscript drafting target end of Feb/March. → _Status: revision-requested_
 - **2026-02-13:** critical-care - CONFIRMED: Paper is in-preparation, NOT under review. Has not been written or submitted. Team meeting today Feb 13 with Rochelle Fu, Craig Newgard, Obert, and John to finalize analysis plan. Target submission in 3-4 weeks (early-mid March 2026). Status: in-preparation.
 - **2026-02-10:** critical-care - CORRECTION: Set status to in-preparation, not under-review. Paper has not been written or submitted. Currently in data analysis planning phase. Blocked until after Friday 2/13 team meeting with Rochelle Fu, Craig Newgard, Obert, and John Organic-Lee to discuss data elements and analysis plan.
