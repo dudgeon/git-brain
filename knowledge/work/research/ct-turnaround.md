@@ -44,6 +44,7 @@ permalink: research/ct-turnaround
 
 ## Activity Log
 
+- **2026-02-19:** CT Turnaround Times Study - status change to accepted. Accepted at Emergency Radiology with minor revisions. Obert handling final submission. Counts as accepted for promotion.
 - **2026-02-19:** CT TAT / Breaking the Bottleneck paper - ACCEPTED with minor revisions at Emergency Radiology. Obert Xu will handle submitting the revised manuscript and will notify when truly published. For promotion purposes, this counts as accepted. → _Status: revision-requested_
 
 ## Notes
