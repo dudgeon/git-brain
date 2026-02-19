@@ -38,6 +38,7 @@ permalink: research/ai-scribe
 
 ## Activity Log
 
+- **2026-02-19:** AI Scribe Perspective & Education - New exploratory project added Feb 19. Perspective piece arguing ambient scribes liberate cognitive resources rather than erode clinical reasoning ("the note is not the thinking"). TBD journal — AEM, Annals, NEJM Catalyst, JAMA Viewpoint under consideration. 1st author likely, possible co-author Rob Cloutier. Key near-term action: read and reach out to O'Rourke et al. (2026) JGIM "Integrating AI Scribes into Medical Education: Guardrails for Preserving Clinical Reasoning." One-month horizon to sharpen focus, check-in ~March 19.
 - **2026-02-19:** AI Scribe Verbal Anchoring - status change to in-preparation. Rejected from both NEJM AI and JAMIA. Jordan Wackett leading resubmission to Annals of Emergency Medicine. Not currently under review anywhere.
 - **2026-02-13:** ai-scribe - REJECTED from JAMIA (Journal of the American Medical Informatics Association). Previously rejected from NEJM AI. Will be resubmitted to Annals of Emergency Medicine. Jordan Wackett is lead on resubmission. Status: in-preparation, needs resubmission to Annals of EM. → _Status: revision-requested_
 - **2026-02-12:** CORRECTION: Paper was also rejected from JAMIA (submitted Jan 31, 2026). Now pivoting to submit as perspective piece to Annals of Emergency Medicine. Status changed to in-preparation.
