@@ -42,6 +42,10 @@ permalink: research/ct-turnaround
 
 ---
 
+## Activity Log
+
+- **2026-02-19:** CT TAT / Breaking the Bottleneck paper - ACCEPTED with minor revisions at Emergency Radiology. Obert Xu will handle submitting the revised manuscript and will notify when truly published. For promotion purposes, this counts as accepted. → _Status: revision-requested_
+
 ## Notes
 - Radiology informatics study
 
