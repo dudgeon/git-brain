@@ -5,7 +5,7 @@ title: AI Scribe Perspective & Education
 type: research
 status: exploratory
 position: 1st-author (likely)
-journal: TBD — AEM, Annals EM, NEJM Catalyst, JAMA Viewpoint under consideration
+journal: TBD — AEM or Annals of Emergency Medicine preferred; NEJM Catalyst, JAMA Viewpoint also considered
 theme: ai-clinical-innovation
 permalink: research/ai-scribe-perspective
 ---
@@ -13,6 +13,8 @@ permalink: research/ai-scribe-perspective
 ## Overview
 
 Perspective/commentary piece arguing that the dominant fear narrative around ambient AI scribes — that they erode clinical reasoning — fundamentally misunderstands what physicians currently do when they document. The core reframe: modern medical documentation is a medico-legal/billing compliance exercise, not a clinical reasoning exercise. Ambient scribes don't offload critical thinking; they offload the secretarial distraction *from* critical thinking.
+
+This piece is **not a rebuttal** of O'Rourke/Abernethy et al. (2026) JGIM. Rather, it takes a complementary and more technically nuanced view, extending their guardrails argument by describing the LLM technical underpinnings that make section-specific inference risk concrete and actionable.
 
 **Working title candidates:**
 - "The Note Is Not the Thinking: Decoupling Documentation from Clinical Reasoning in the Age of Ambient AI"
@@ -25,23 +27,45 @@ Perspective/commentary piece arguing that the dominant fear narrative around amb
 
 ---
 
+## Refined Framing (Feb 19, 2026)
+
+### Argumentative Arc
+1. **Faculty data as grounding:** OHSU Abridge faculty implementation data (faculty-only rollout to date) demonstrates where ambient scribes work well — efficiency, burnout reduction, presence with patients. This is the "this works, here's why" foundation.
+2. **The pivot:** Medical education is categorically different from faculty practice, and the technical reasons why matter.
+3. **The technical LLM section:** One focused, accessible section explaining temperature and sampling parameters (top-p, top-k) in the context of differential diagnosis generation — without getting lost in the weeds.
+4. **The core technical insight:** 
+   - High temperature → creative, broad output (appropriate for HPI narrative generation)
+   - High temperature applied to A&P/MDM → statistically likely differentials rather than contextually appropriate ones
+   - Low temperature → coherent, confident note, but potentially a prematurely closed differential
+   - Neither setting is "right" for MDM, and no ambient scribe vendor is currently transparent about what parameters they use or whether they differentiate by note section
+5. **The actionable critique:** Demand section-level transparency from vendors. Advocate for inference-mode disclosure. Push for trainee-specific configurations *before* rollout — not after.
+
+### Positionality as Asset
+Steve is writing from a unique position: real faculty implementation data in hand, four months away from trainee rollout at OHSU, and actively designing guardrails. This is not armchair speculation — it's a practitioner-informaticist with skin in the game. This should be made explicit in the piece.
+
+### Faculty Data Strategy
+OHSU Abridge data is faculty-only. This limitation is reframed as a feature:
+- Faculty data provides the empirical grounding ("ambient scribes demonstrably improve efficiency and presence")
+- The absence of trainee data makes the argument *more* urgent, not weaker
+- The four-month rollout timeline creates genuine stakes: we are writing the guardrails now, before the data exists
+
+### Journal Fit
+- **AEM or Annals of Emergency Medicine** — preferred. Right readership (ED physicians, educators), sufficient word count for technical section and faculty/trainee contrast.
+- **NEJM Catalyst** — good for health systems angle, but may not want LLM technical depth.
+- **JAMA Viewpoint** — high impact but tight word count; difficult to make full argument.
+
+---
+
 ## Core Argument
 
-The note is not the thinking. Documentation-as-compliance has been conflated with documentation-as-reasoning for decades, and ambient scribes expose that conflation. The question should not be "what do we lose?" but "what do we gain, and how do we use it wisely?"
-
-Key structural arguments:
-1. Historical arc: T-chart → EMR/compliance bloat → post-ambient scribe paradigm
-2. The cognitive argument: real-time documentation is a compensatory strategy for working memory limits, not a reasoning tool
-3. The modularity argument: "AI scribe" is not monolithic — risk is section-specific (HPI vs. MDM vs. A&P)
-4. The LLM inference risk: temperature/top-p settings in AI-generated MDM may artificially narrow differentials — this is the honest risk that needs guardrails
-5. The education opportunity: redesign clinical education to maximize the cognitive space ambient scribes create
+The note is not the thinking. Documentation-as-compliance has been conflated with documentation-as-reasoning for decades, and ambient scribes expose that conflation. The question should not be "what do we lose?" but "what do we gain, and how do we use it wisely?" — and critically, how do we demand that vendors build tools that reflect this distinction.
 
 ---
 
 ## Key References
 
 ### Must-Read/Cite
-- O'Rourke et al. (2026) JGIM — "Integrating AI Scribes into Medical Education: Guardrails for Preserving Clinical Reasoning" — **primary paper to engage with; reach out to author**
+- **Abernethy & O'Rourke et al. (2026) JGIM** — "Integrating AI Scribes into Medical Education: Guardrails for Preserving Clinical Reasoning" — primary paper to build on; Dr. Jane Abernethy MD, MBE is corresponding author; contacted Feb 19 re: potential collaboration
 - NEJM Catalyst (2025) — Kaiser Permanente 2.5M encounter study
 - Shah et al. (2025) JAMIA — Stanford pilot (burnout/task load reduction)
 - Hill et al. (2013) Am J Emerg Med — 4,000 clicks study
@@ -55,41 +79,41 @@ Key structural arguments:
 
 ---
 
-## Open Questions
+## Collaborators / Outreach
 
-1. Does Rob Cloutier want to be a co-author? His 40-year historical perspective is central to the argument.
-2. Which journal fits best — AEM commentary? NEJM Catalyst? JAMA Viewpoint?
-3. Standalone piece or connected to Nuts & Bolts AI literacy paper?
-4. Could OHSU Abridge implementation data provide empirical support?
-5. Conference presentation first (e.g., SAEM)?
-6. How does this intersect with Jordan Wackett's AI scribe survey work?
+- **Rob Cloutier** — potential co-author; T-chart era historical perspective; source of original discovery conversation
+- **Jane Abernethy MD, MBE** — corresponding author of O'Rourke et al. (2026) JGIM; contacted Feb 19 re: complementary paper and potential co-authorship
+- **Penn Medicine CRISP team** — potential collaboration on education angle
 
 ---
 
-## Collaborators / Outreach
+## Open Questions
 
-- **Rob Cloutier** — potential co-author; T-chart era historical perspective
-- **O'Rourke et al. (2026) JGIM author** — reach out; paper is well-balanced and grounded in real implementation data; contact for perspective alignment and potential collaboration
-- **Penn Medicine CRISP team** — potential collaboration on education angle
+1. Does Abernethy respond positively to collaboration? If so, co-authorship significantly strengthens the piece and the relationship.
+2. Does Rob Cloutier want to be a co-author?
+3. Can OHSU Abridge faculty data be extracted and used? What IRB considerations apply?
+4. Standalone piece or connected to Nuts & Bolts AI literacy paper?
+5. Conference presentation first (e.g., SAEM)?
+6. How does this intersect with Jordan Wackett's AI scribe survey work?
 
 ---
 
 ## Activity Log
 
 - **2026-02-18** — Discovery document created from mid-year review conversation with Cloutier
-- **2026-02-19** — Added to research portfolio as exploratory project. One-month horizon to sharpen focus and decide on direction. Full discovery doc attached at project creation.
+- **2026-02-19** — Added to research portfolio as exploratory project. Framing refined: complementary to Abernethy/O'Rourke rather than rebuttal; OHSU faculty data as empirical grounding; LLM inference/temperature as novel technical contribution; four-month trainee rollout as stakes. Outreach email drafted to Dr. Jane Abernethy re: collaboration. One-month horizon to sharpen focus (~March 19 check-in).
 
 ---
 
 ## Action Items
 
-- [ ] Read O'Rourke et al. (2026) JGIM in full — this is the primary paper to position against/alongside
-- [ ] Reach out to O'Rourke et al. author — thoughtful, balanced piece based on real implementation data; contact re: alignment and possible collaboration
-- [ ] Decide on journal target and format (determines word count, tone)
-- [ ] Pull full-text of key references
+- [ ] Send outreach email to Dr. Jane Abernethy MD, MBE (drafted Feb 19)
+- [ ] Read O'Rourke/Abernethy et al. (2026) JGIM in full
+- [ ] Assess OHSU Abridge faculty data — what's extractable, what IRB implications exist
+- [ ] Decide on journal target (leaning AEM or Annals)
 - [ ] Draft lawyer/court reporter analogy opening
+- [ ] Draft LLM technical section (temperature/top-p in context of MDM generation)
 - [ ] Discuss co-authorship with Rob Cloutier
-- [ ] Explore whether OHSU Abridge data could contribute empirical support
-- [ ] Research LLM sampling parameters (temperature, top-p, top-k) in clinical documentation context — vendor transparency?
-- [ ] Investigate whether any ambient scribe tools differentiate transcription mode vs. inference mode by note section
-- [ ] One-month check-in (~March 19): assess focus, decide whether to proceed, and identify journal
+- [ ] Research vendor transparency on inference parameters — are any ambient scribe companies disclosing this?
+- [ ] Investigate whether any tools differentiate transcription mode vs. inference mode by note section
+- [ ] One-month check-in (~March 19): assess focus, Abernethy response, decide whether to proceed
