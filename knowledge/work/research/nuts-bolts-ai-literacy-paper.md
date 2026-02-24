@@ -44,6 +44,13 @@
 
 ## Activity Log
 
+- **2026-02-24:** Critical Care Billing Capture Rate Study: Had research group meeting, received feedback on additional data needed. Emailed Skyler Kieran requesting new data pull. BLOCKED until data arrives. Rochelle Fu confirmed on board for analysis once data is in. Strong pathway to analysis and writing once data received.
+
+Nuts & Bolts AI Literacy Paper: Moving along well. Priority project — plan to work on this tomorrow Wednesday February 25.
+
+ED Callback RCT: Jack completed data pull and results section. He has asked Steve to do edits on results. Steve will also scaffold a discussion section to help move the project forward. Add to active to-do.
+
+AI Scribe Verbal Anchoring Paper: Partnering with Dr. Gold who will conduct ethnographic analysis in the ED to identify barriers — will complement the manuscript well. BLOCKED until ethnographic work is completed. Cannot meaningfully move forward until then. → _Status: revision-requested_
 - **2026-02-16:** nuts-bolts-ai-literacy-paper - Decision made: going with two-part series, but only doing Part 1 now. Single submission vs two-part decision is resolved.
 - **2026-02-10:** nuts bolts - Completed comprehensive project analysis. Notion draft is ~5x too long (~3000 words vs ~550 word budget). Recommended cutting from 7+ objectives to 1-2 core objectives per editor Dr. Mahan's guidance. Proposed structure: Page 1 = source-grounded AI concept + RACE framework, Page 2 = AI literacy modeling + Three V's + Practical Pearls. Recommended Recraft.ai Pro for custom vector icons with Noun Project for standard icons. Created 10 specific icon generation prompts. Full analysis document saved to project folder. Key decision needed: single submission vs Part 1/Part 2 series.
 - **2026-02-10:** nuts-bolts-ai-literacy-paper - Writing is essentially done. Currently in formatting and graphic design iteration phase. Working on infographic/visual design today.
