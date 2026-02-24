@@ -81,6 +81,7 @@ Reviewer feedback received — all requested changes are achievable. Currently ~
 
 ## Activity Log
 
+- **2026-02-24:** ASD Restraints (JADD): Resubmitted R2 on February 24, 2026. MS# JADD-D-26-00050R2. Multiple rounds of revisions completed. Status is now BLOCKED — awaiting editorial decision from JADD editors.
 - **2026-02-19:** ASD Restraints - Follow up with Sunhee today (Feb 19) to check on status of her final edits. Steve is 80% done. Awaiting her portion before final submission.
 - **2026-02-16:** Major revision decision received from JADD. All reviewer changes are achievable and promising. Currently ~80% done with edits. Target resubmit within 10 days (~Feb 26). Status: revision-requested, not blocked.
 - **2026-02-09:** UNDO erroneous update. Clinical Pediatrics resubmission was for the wrong project. ASD Restraints is still at JADD.
