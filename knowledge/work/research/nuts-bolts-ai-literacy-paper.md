@@ -44,6 +44,7 @@
 
 ## Activity Log
 
+- **2026-02-25:** Nuts and bolts - next focus: get draft to co-authors for review
 - **2026-02-24:** Critical Care Billing Capture Rate Study: Had research group meeting, received feedback on additional data needed. Emailed Skyler Kieran requesting new data pull. BLOCKED until data arrives. Rochelle Fu confirmed on board for analysis once data is in. Strong pathway to analysis and writing once data received.
 
 Nuts & Bolts AI Literacy Paper: Moving along well. Priority project — plan to work on this tomorrow Wednesday February 25.
