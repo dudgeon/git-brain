@@ -136,6 +136,7 @@ Pragmatic randomized controlled trial evaluating whether a physician callback pr
   - Ready for visualization phase
 ## Activity Log
 
+- **2026-02-26:** Callback study with Jack - Jack created a draft with introduction and discussion sections. Steve provided a draft outline for positioning the paper and generated a NotebookLM document with all cited references. Jack should now have everything needed to produce a strong first draft to send to all co-authors.
 - **2026-02-04:** ED Callback RCT - Currently blocked. Waiting for Jack (departmental statistician) to complete statistical analysis. Once analysis is back, will restart the writing process. No action needed from Steve at this time.
 - **2026-02-02:** AI survey - completed IRB submission
 
