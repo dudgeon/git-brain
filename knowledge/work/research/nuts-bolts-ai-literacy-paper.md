@@ -44,6 +44,7 @@
 
 ## Activity Log
 
+- **2026-02-26:** Nuts and Bolts paper - Draft sent out to co-authors, expecting comments back in 1-2 days. Strong draft essentially in final form unless co-authors have objections. Plan to submit very early next week.
 - **2026-02-25:** Nuts and bolts - next focus: get draft to co-authors for review
 - **2026-02-24:** Critical Care Billing Capture Rate Study: Had research group meeting, received feedback on additional data needed. Emailed Skyler Kieran requesting new data pull. BLOCKED until data arrives. Rochelle Fu confirmed on board for analysis once data is in. Strong pathway to analysis and writing once data received.
 
