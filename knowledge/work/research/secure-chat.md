@@ -92,6 +92,7 @@ Editorial feedback requested revisions before sending manuscript for full peer r
 
 ## Activity Log
 
+- **2026-02-26:** Secure Chat paper - ACCEPTED into WestJEM! Need to do minor formatting issues for pre-publishing proof. Applied for APC waiver, feeling confident about getting one. Action item: complete brief formatting fixes and return draft to avoid being the bottleneck. → _Status: revision-requested_
 - **2026-02-24:** SecureChat / Secure Chat nursing communication study (WestJEM): Received minor revision request after responding to major edits. Completed all minor edits and resubmitted February 24, 2026. Status is now BLOCKED — awaiting final editorial decision from WestJEM.
 - **2026-02-19:** EHR Secure Messaging Study - Resubmitted to WestJEM on Feb 19, 2026. Point-by-point response completed. Now waiting on editor response. Status: blocked/under-review. No further action needed from Steve at this time.
 - **2026-02-17:** Secure Chat - WestJEM major revision received Feb 2026. Steve handling revisions. Need follow-up info from Melinda Hartenstein re: nursing education component. Need final edits from Sunhee Chung. Target resubmission within 1 week.
