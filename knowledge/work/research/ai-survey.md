@@ -45,6 +45,7 @@ next_action: Begin survey distribution
 
 ## Activity Log
 
+- **2026-02-27:** AI Knowledge Survey Study - correcting status: NOT under review. IRB approved, data collection not yet started. Status should be in-preparation. → _Status: in-preparation_
 - **2026-02-25:** IRB approved (minimal risk). Project unblocked. Next: begin survey distribution.
 - **2026-02-19:** AI Knowledge Survey - status change to in-preparation. Not yet submitted to a journal; still in IRB/pre-submission phase.
 - **2026-02-17:** AI Survey - IRB exemption recently submitted. Anna (medical student lead) is emailing potential collaborators at other institutions. Meeting Friday to discuss project status. Need to develop methodology for wide survey dissemination. Steve needs to contact Jeff Gold and Logan Jones at OHSU about dissemination methodology and collaboration. → _Status: under-review_
