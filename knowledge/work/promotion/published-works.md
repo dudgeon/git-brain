@@ -95,6 +95,13 @@
 - **Type**: Original Research
 - **Role**: Middle author
 
+### 11. EHR Secure Messaging in the Emergency Department
+- **Authors**: Go M, Hartenstein M, Chung SH, **McGaughey S**
+- **Journal**: Western Journal of Emergency Medicine
+- **Year**: Accepted
+- **Type**: Original Research
+- **Role**: Senior author
+
 ---
 
 ## II. Book Chapters
@@ -115,16 +122,16 @@
 
 | Category | Count |
 |---|---|
-| Peer-reviewed manuscripts (original research) | 8 |
+| Peer-reviewed manuscripts (original research) | 9 |
 | Peer-reviewed manuscripts (perspectives) | 2 |
-| **Total peer-reviewed manuscripts** | **10** |
+| **Total peer-reviewed manuscripts** | **11** |
 | Book chapters | 1 |
 
 ### By Author Position (Peer-Reviewed Manuscripts)
 | Position | Count |
 |---|---|
 | First/sole author | 2 (#8 AI perspective, #9 Symptom Tracker) |
-| Senior/last author | 1 (#4 Neonatal presentations) |
+| Senior/last author | 2 (#4 Neonatal presentations, #11 SecureChat) |
 | Co-author/Middle | 7 |
 
 ---
