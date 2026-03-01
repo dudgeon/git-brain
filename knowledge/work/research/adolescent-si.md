@@ -6,7 +6,8 @@ collaborators: [Nithin Ravi, Monica Saladik, Laura Waagmeester, Dalton Wesemann,
 status: under-review
 position: 1st-author
 theme: mental-health
-journal: Academic Pediatrics
+journal: Clinical Pediatrics
+blocked: true
 permalink: research/adolescent-si
 ---
 

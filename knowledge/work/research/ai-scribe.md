@@ -6,7 +6,8 @@ collaborators: [Jordan Wackett]
 status: in-preparation
 position: 2nd-author
 theme: ai-innovation
-journal: Annals of Emergency Medicine (pending resubmission as perspective)
+journal: Annals of Emergency Medicine
+blocked: true
 permalink: research/ai-scribe
 ---
 

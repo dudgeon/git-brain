@@ -3,12 +3,11 @@ title: EHR Secure Messaging Study
 type: research
 aliases: [secure chat, WestJEM secure chat, Epic chat, ED messaging, secure messaging]
 collaborators: []
-status: revision-requested
+status: accepted
 position: senior-author
 theme: informatics-qi
 journal: Western Journal of Emergency Medicine
-blocked: no
-next: Revise manuscript per editor feedback and resubmit to WestJEM within one week
+blocked: false
 permalink: research/secure-chat
 ---
 

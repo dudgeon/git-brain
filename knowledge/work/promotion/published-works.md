@@ -1,7 +1,12 @@
 # Published & Completed Academic Works
 
-> **Purpose**: Comprehensive list of published/completed academic products for CV and promotion portfolio. As manuscripts move from under-review to accepted, they should be added here.
-> 
+> **Purpose**: Comprehensive list of published/completed academic products for CV and promotion portfolio.
+>
+> **Regenerable**: This list can be regenerated from research file frontmatter. Ask Claude:
+> *"List all my research files with status 'published' or 'accepted', with full bibliographic details."*
+>
+> **When to update**: Add entries here when a manuscript reaches `status: accepted` or `status: published` in its research file. The research file frontmatter is the single source of truth for status.
+>
 > **Last updated**: 2026-03-01
 
 ---

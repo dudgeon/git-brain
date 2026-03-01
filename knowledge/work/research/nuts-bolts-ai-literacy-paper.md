@@ -1,3 +1,16 @@
+---
+title: Nuts & Bolts AI Literacy Paper
+type: research
+aliases: [nuts and bolts, AI literacy, nuts bolts, Academic Pediatrics AI paper]
+collaborators: [Jordan Wackett]
+status: in-preparation
+position: 1st-author
+theme: ai-innovation
+journal: Academic Pediatrics
+blocked: false
+permalink: research/nuts-bolts-ai-literacy-paper
+---
+
 # Nuts & Bolts AI Literacy Paper
 
 **Status:** In Preparation
