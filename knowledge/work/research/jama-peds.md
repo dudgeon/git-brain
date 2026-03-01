@@ -38,6 +38,7 @@ Large cohort study examining the impact of emergency department (ED) pediatric r
 
 ## Activity Log
 
+- **2026-03-01:** JAMA Peds ED Readiness - not submitted. Craig still needs to send final draft to co-author group. Status: in-preparation, blocked on Craig.
 - **2026-02-27:** JAMA Pediatrics ED Readiness Study - clarifying status: this is Craig Newgard's project. Final draft likely being prepared. Steve is not driving this. Blocked: yes, waiting on Craig.
 - **2026-02-19:** JAMA Peds ED Readiness - status change to in-preparation. Not submitted yet; waiting on Craig Newgard to send final proof for co-author sign-off before submission.
 - **2026-02-13:** jama-peds-ed-readiness - CONFIRMED: Paper is in-preparation, NOT under review. Craig Newgard is lead author. Next step: waiting for Craig to send final proof for co-author sign-off before submission. No action needed from Steve. Status: in-preparation.
