@@ -49,9 +49,9 @@
 
 ### 5. Scene time and outcome in pediatric out-of-hospital cardiac arrest: Findings from NEMSIS data
 - **Authors**: Chung SH, Blair A, **McGaughey S**, Hansen M, Lupton J, Lin AL
-- **Journal**: Pediatric Emergency Care. 2024 (ahead of print)
+- **Journal**: Pediatric Emergency Care
 - **DOI**: 10.1097 (exact DOI pending confirmation)
-- **Year**: 2024 (ahead of print)
+- **Year**: Ahead of print
 - **Type**: Original Research
 - **Role**: Co-author
 - **Note**: Confirm exact DOI and page numbers.
@@ -67,9 +67,9 @@
 
 ### 7. Restraints and seclusion: A multimodal approach to improving face-to-face documentation compliance in the emergency department
 - **Authors**: Xu O, DeVane K, Chess L, **McGaughey S**, Orwoll B, Brockman T, Burns B
-- **Journal**: Journal of Patient Safety. 2025 (ahead of print)
+- **Journal**: Journal of Patient Safety
 - **DOI**: 10.1097/PTS.0000000000001455
-- **Year**: 2025 (ahead of print)
+- **Year**: Ahead of print
 - **Type**: Original Research
 - **Role**: Co-author
 
@@ -84,14 +84,14 @@
 ### 9. The Symptom Tracker
 - **Authors**: **McGaughey S**
 - **Journal**: NEJM Perspectives
-- **Year**: Accepted (not yet published)
+- **Year**: Accepted
 - **Type**: Perspective
 - **Role**: Sole author
 
 ### 10. Breaking the Bottleneck: CT turnaround times study
 - **Authors**: Xu O, et al., **McGaughey S** (co-author)
 - **Journal**: Emergency Radiology
-- **Year**: Accepted (not yet published)
+- **Year**: Accepted
 - **Type**: Original Research
 - **Role**: Middle author
 
@@ -123,15 +123,9 @@
 ### By Author Position (Peer-Reviewed Manuscripts)
 | Position | Count |
 |---|---|
-| First/sole author | 3 (#8 AI perspective, #9 Symptom Tracker, #10 CT — wait, CT is middle) |
-| Senior/last author | 1 (#4 — Neonatal presentations) |
-| Co-author/Middle | 6 |
-
-### Accepted but not yet published
-| Manuscript | Journal | Type | Role |
-|---|---|---|---|
-| The Symptom Tracker | NEJM Perspectives | Perspective | Sole author |
-| CT Turnaround Times | Emergency Radiology | Original Research | Middle author |
+| First/sole author | 2 (#8 AI perspective, #9 Symptom Tracker) |
+| Senior/last author | 1 (#4 Neonatal presentations) |
+| Co-author/Middle | 7 |
 
 ---
 
