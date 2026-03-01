@@ -92,6 +92,7 @@ Editorial feedback requested revisions before sending manuscript for full peer r
 
 ## Activity Log
 
+- **2026-03-01:** SecureChat - fully accepted at WestJEM, awaiting proof. Update status to accepted.
 - **2026-02-27:** EHR Secure Messaging Study - accepted ahead of print at Western Journal of Emergency Medicine. → _Status: accepted_
 - **2026-02-27:** EHR Secure Messaging Study - formatting fixes completed and returned to journal. No longer the bottleneck.
 - **2026-02-26:** Secure Chat paper - ACCEPTED into WestJEM! Need to do minor formatting issues for pre-publishing proof. Applied for APC waiver, feeling confident about getting one. Action item: complete brief formatting fixes and return draft to avoid being the bottleneck. → _Status: revision-requested_
