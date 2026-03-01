@@ -51,10 +51,10 @@
 - **Authors**: Chung SH, Blair A, **McGaughey S**, Hansen M, Lupton J, Lin AL
 - **Journal**: Pediatric Emergency Care. 2024 (ahead of print)
 - **DOI**: 10.1097 (exact DOI pending confirmation)
-- **Year**: 2024
+- **Year**: 2024 (ahead of print)
 - **Type**: Original Research
 - **Role**: Co-author
-- **Note**: Epub ahead of print. Confirm exact DOI and page numbers.
+- **Note**: Confirm exact DOI and page numbers.
 
 ### 6. Survey of firearm storage practices and preferences among parents and caregivers of children
 - **Authors**: Haag MB, Dennis CH, **McGaughey S**, Gilbert TA, DeFrancesco S, Gallardo AR, Hoffman BD, Carlson KF
@@ -69,7 +69,7 @@
 - **Authors**: Xu O, DeVane K, Chess L, **McGaughey S**, Orwoll B, Brockman T, Burns B
 - **Journal**: Journal of Patient Safety. 2025 (ahead of print)
 - **DOI**: 10.1097/PTS.0000000000001455
-- **Year**: 2025
+- **Year**: 2025 (ahead of print)
 - **Type**: Original Research
 - **Role**: Co-author
 
@@ -80,6 +80,20 @@
 - **Year**: 2025
 - **Type**: Perspective
 - **Role**: First author / Corresponding author
+
+### 9. The Symptom Tracker
+- **Authors**: **McGaughey S**
+- **Journal**: NEJM Perspectives
+- **Year**: Accepted (not yet published)
+- **Type**: Perspective
+- **Role**: Sole author
+
+### 10. Breaking the Bottleneck: CT turnaround times study
+- **Authors**: Xu O, et al., **McGaughey S** (co-author)
+- **Journal**: Emergency Radiology
+- **Year**: Accepted (not yet published)
+- **Type**: Original Research
+- **Role**: Middle author
 
 ---
 
@@ -101,17 +115,23 @@
 
 | Category | Count |
 |---|---|
-| Peer-reviewed manuscripts (original research) | 7 |
-| Peer-reviewed manuscripts (perspectives) | 1 |
-| **Total peer-reviewed manuscripts** | **8** |
+| Peer-reviewed manuscripts (original research) | 8 |
+| Peer-reviewed manuscripts (perspectives) | 2 |
+| **Total peer-reviewed manuscripts** | **10** |
 | Book chapters | 1 |
 
 ### By Author Position (Peer-Reviewed Manuscripts)
 | Position | Count |
 |---|---|
-| First/sole author | 1 (#8 — AI perspective) |
+| First/sole author | 3 (#8 AI perspective, #9 Symptom Tracker, #10 CT — wait, CT is middle) |
 | Senior/last author | 1 (#4 — Neonatal presentations) |
-| Co-author | 6 |
+| Co-author/Middle | 6 |
+
+### Accepted but not yet published
+| Manuscript | Journal | Type | Role |
+|---|---|---|---|
+| The Symptom Tracker | NEJM Perspectives | Perspective | Sole author |
+| CT Turnaround Times | Emergency Radiology | Original Research | Middle author |
 
 ---
 
