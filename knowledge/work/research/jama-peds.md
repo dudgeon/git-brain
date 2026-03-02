@@ -7,6 +7,7 @@ status: in-preparation
 position: middle-author
 theme: pediatric-outcomes
 journal: JAMA Pediatrics
+blocked: true
 permalink: research/jama-peds
 ---
 

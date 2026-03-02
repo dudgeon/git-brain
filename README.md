@@ -34,38 +34,33 @@ That's it. Push to GitHub, and your AI can search it within a minute.
 3. Select your repository
 4. Copy your unique MCP endpoint URL from the success page
 
-### 2. Authenticate
+### 2. Connect Your AI Client
 
-1. Visit [brainstem.cc/oauth/authorize](https://brainstem.cc/oauth/authorize)
-2. Authorize with GitHub
-3. Copy your session token
+#### Claude.ai (Web) — easiest
 
-### 3. Connect Your AI Client
+1. Go to **Settings → Connectors → Add custom connector**
+2. Paste your MCP endpoint URL: `https://brainstem.cc/mcp/{your-uuid}`
+3. Claude.ai handles authentication automatically via OAuth — no token needed
 
 #### Claude Desktop / Claude Code
 
-Add to your MCP config:
+Add to your MCP config (Claude Desktop: `claude_desktop_config.json`, Claude Code: `.mcp.json` or via `claude mcp add`):
 
 ```json
 {
   "mcpServers": {
     "my-brain": {
-      "url": "https://brainstem.cc/mcp/{your-uuid}",
-      "headers": {
-        "Authorization": "Bearer <your-session-token>"
-      }
+      "url": "https://brainstem.cc/mcp/{your-uuid}"
     }
   }
 }
 ```
 
-#### Claude.ai (Web)
-
-Settings → Connectors → Add custom connector → paste your endpoint URL and add the Authorization header.
+OAuth authentication is handled automatically — you'll be prompted to authorize with GitHub on first use. No manual token needed.
 
 ## MCP Tools
 
-Brainstem exposes six tools over MCP:
+Brainstem exposes eight tools over MCP:
 
 | Tool | Description |
 |------|-------------|
@@ -73,13 +68,18 @@ Brainstem exposes six tools over MCP:
 | `get_document` | Retrieve the full contents of a file by its path. |
 | `list_recent` | List recently modified files, optionally filtered by path prefix. |
 | `list_folders` | Browse the folder structure of your repo. |
-| `inbox` | Add a quick note to your inbox folder, committed directly to GitHub. |
-| `about` | Information about the Brainstem server and what it does. |
+| `brain_inbox` | Compose a note for your inbox. In Claude Desktop, opens an interactive composer with live markdown preview, 5-second auto-save countdown, and edit/cancel controls. Notes are saved to both GitHub and the search index. |
+| `brain_inbox_save` | Save a note directly to the inbox (R2 + GitHub). Preferred for non-UI hosts and AI agents. |
+| `brain_account` | Manage email-to-brain forwarding: verify senders, claim vanity aliases, check status. |
+| `about` | Information about your Brainstem instance and available content. |
 
 ## How Sync Works
 
 ```
-GitHub Push → Webhook → Brainstem Worker → R2 Storage → AI Search (reindex)
+GitHub Push  → Webhook → Brainstem Worker → R2 Storage → AI Search (reindex)
+Email        → Worker email() handler ↗
+Web Clipper  → POST /api/clip ↗
+Inbox Tools  → MCP tool call ↗
 ```
 
 - When you push to your connected repo, GitHub sends a webhook to Brainstem
@@ -88,6 +88,18 @@ GitHub Push → Webhook → Brainstem Worker → R2 Storage → AI Search (reind
 - New content is searchable within ~1 minute
 
 Sync is incremental — only changed files are fetched on each push.
+
+## Ways to Save
+
+Beyond syncing your GitHub repo, there are three additional input paths:
+
+| Method | How It Works |
+|--------|-------------|
+| **Email forwarding** | Forward emails to your `@brainstem.cc` address. Set up via the `brain_account` MCP tool. |
+| **Web clipper** | Browser bookmarklet extracts articles and saves them to your inbox. Get it from your OAuth success page or `/bookmarklet`. |
+| **Inbox tools** | Your AI can save notes directly via `brain_inbox` (interactive composer) or `brain_inbox_save` (direct save). |
+
+All saved content lands in your `inbox/` folder and is searchable within a minute.
 
 ## Architecture
 
@@ -98,6 +110,18 @@ Built on Cloudflare's stack:
 - **Cloudflare D1** (SQLite) for installation and user tracking
 - **Cloudflare AI Search** for semantic search and retrieval
 - **GitHub App** for authentication, webhooks, and repo access
+
+## Security & Privacy
+
+Your synced files are stored on Cloudflare R2, encrypted at rest with AES-256-GCM (Cloudflare-managed keys), and indexed by Cloudflare AI Search for semantic retrieval. All connections use TLS. Access to your data requires authentication via GitHub OAuth.
+
+**Tenant isolation:** Each installation's data is stored under a unique R2 prefix (`brains/{uuid}/`) and search queries are scoped using folder metadata filters. This isolation has been verified with multiple live installations — searches, file listings, and document retrievals from one installation cannot access another installation's data. Debug endpoints enforce ownership checks. See the [backlog](docs/BACKLOG.md) for detailed test results.
+
+The platform operator has technical access to stored content for operational purposes. This is the same trust model as most SaaS products — you are trusting both the infrastructure provider (Cloudflare) and the platform operator. Do not connect repositories containing secrets, credentials, or highly sensitive data you are not comfortable storing on a third-party service.
+
+You can disconnect and delete all your synced data at any time by uninstalling the GitHub App from your repository settings. Uninstallation triggers automatic cleanup of all stored files and search index entries.
+
+For a full analysis of the encryption and isolation model, see [ADR-003: Encryption at Rest](docs/adr/003-encryption-at-rest.md).
 
 ## Documentation
 

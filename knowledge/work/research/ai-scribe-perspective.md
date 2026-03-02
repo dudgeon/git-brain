@@ -1,14 +1,17 @@
-# AI Scribe Perspective & Education
-
 ---
 title: AI Scribe Perspective & Education
 type: research
+aliases: [AI scribe perspective, ambient scribe education, scribe cognition paper]
+collaborators: [Rob Cloutier, Jane Abernethy]
 status: exploratory
-position: 1st-author (likely)
-journal: TBD — AEM or Annals of Emergency Medicine preferred; NEJM Catalyst, JAMA Viewpoint also considered
-theme: ai-clinical-innovation
+position: 1st-author
+theme: ai-innovation
+journal: TBD
+blocked: false
 permalink: research/ai-scribe-perspective
 ---
+
+# AI Scribe Perspective & Education
 
 ## Overview
 

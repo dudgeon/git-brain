@@ -7,6 +7,7 @@ status: in-preparation
 position: 1st-author
 theme: informatics-qi
 journal: TBD
+blocked: false
 permalink: research/needs-assessment
 ---
 
@@ -126,8 +127,8 @@ An IRB-approved three-phase needs assessment study to address research silos in 
 ## Activity Log
 
 - **2026-02-10:** needs-assessment - Scheduled leadership focus group for March 19 at 10am. This will likely be the final focus group. After this, can proceed to parse all data and complete analysis.
-- **2026-02-09:** Needs Assessment - Emailed leadership faculty for focus group: Dr. Lainie Yarris (chair of education division, professor), Dr. Beech Burns (vice chair), Dr. David Jones (PD of residency), and Mary (chair). Working on finding a date to meet. → _Status: in-preparation_
-- **2026-02-04:** Research Collaboration Needs Assessment - Focus group scheduled for tomorrow (Feb 5). Need to email out leaders to set up one more focus group. Awaiting feedback from residents to see if can schedule a resident-only focus group. → _Status: revision-requested_
+- **2026-02-09:** Needs Assessment - Emailed leadership faculty for focus group: Dr. Lainie Yarris (chair of education division, professor), Dr. Beech Burns (vice chair), Dr. David Jones (PD of residency), and Mary (chair). Working on finding a date to meet.
+- **2026-02-04:** Research Collaboration Needs Assessment - Focus group scheduled for tomorrow (Feb 5). Need to email out leaders to set up one more focus group. Awaiting feedback from residents to see if can schedule a resident-only focus group.
 
 ## Notes
 

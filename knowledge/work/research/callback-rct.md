@@ -7,7 +7,7 @@ status: in-preparation
 position: middle-author
 theme: pediatric-outcomes
 journal: Annals of Emergency Medicine
-tags: [RCT, emergency-medicine, callback, ED-returns, OHSU, Annals]
+blocked: false
 permalink: research/callback-rct
 ---
 

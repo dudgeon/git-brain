@@ -3,12 +3,12 @@ title: ASD Restraints Research Project
 type: research
 aliases: [ASD restraints, autism restraints, Sunhee restraints, JADD paper]
 collaborators: [Sunhee Chung, David Sheridan, Beech Burns]
-status: revision-requested
+status: under-review
 position: 1st-author
 theme: mental-health
 journal: JADD
 permalink: research/asd-restraints-research-project
-blocked: false
+blocked: true
 ---
 
 # Autism Spectrum Disorder and Restraint Use in Pediatric Emergency Department Patients

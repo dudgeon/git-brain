@@ -1,19 +1,28 @@
 import { McpAgent } from "agents/mcp";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, type RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import {
+  registerAppResource,
+  RESOURCE_MIME_TYPE,
+  getUiCapability,
+} from "@modelcontextprotocol/ext-apps/server";
 import {
   getInstallationToken,
   getInstallationRepos,
   fetchRepoContents,
   fetchFileContent,
-  fetchRepoTree,
-  fetchBlobContent,
+  fetchRepoTarballFiles,
   createRepoFile,
   verifyWebhookSignature,
   type GitHubEnv,
 } from "./github";
+import { extractChangedFiles, sanitizeInboxTitle, validateAlias, generateConfirmationCode } from "./utils";
+import { triggerAISearchReindex } from "./cloudflare";
+import { saveToInbox, ensureEmailTables } from "./inbox";
 import logoPng from "../site/brainstem_logo.png";
 import diagramPng from "../site/brainstem-diagram.png";
+import brainInboxHtml from "../ui/dist/index.html";
+import bookmarkletTemplate from "../ui/dist/bookmarklet.js";
 
 // Environment bindings type
 export interface Env extends GitHubEnv {
@@ -113,20 +122,107 @@ export class HomeBrainMCP extends McpAgent<Env> {
   // GitHub repo for this installation (for source links)
   private repoFullName: string = "";
 
+  // Tool handles for conditional MCP Apps upgrade (ADR-009)
+  private _inboxTool: RegisteredTool | null = null;
+  private _inboxSaveTool: RegisteredTool | null = null;
+
+  /**
+   * Upgrade inbox tools with MCP Apps metadata for clients that support it.
+   * Called from oninitialized callback after client capabilities are known.
+   * See ADR-009 for rationale.
+   */
+  private upgradeToAppsTools() {
+    const uri = HomeBrainMCP.INBOX_RESOURCE_URI;
+    const appsMeta = {
+      ui: { resourceUri: uri },
+      "ui/resourceUri": uri,
+    };
+
+    this._inboxTool?.update({
+      _meta: appsMeta,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      callback: async (args: any) => {
+        const { title, content } = args as { title: string; content: string };
+        const safeTitle = sanitizeInboxTitle(title);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        const filePath = `inbox/${timestamp}-${safeTitle}.md`;
+        return {
+          content: [{ type: "text" as const, text: `Note draft prepared: ${filePath}\nTitle: ${title}\n\nThis note has NOT been saved yet. In UI hosts, use the composer to review and save. In non-UI hosts, call brain_inbox_save with the title and content to save.` }],
+          structuredContent: { title, content, filePath },
+        };
+      },
+    });
+
+    this._inboxSaveTool?.update({
+      _meta: appsMeta,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      callback: async (args: any) => {
+        const { title, content, filePath: providedPath } = args as { title: string; content: string; filePath?: string };
+        try {
+          const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
+          if (!installationUuid) {
+            return {
+              content: [{ type: "text" as const, text: "Cannot save: no installation context. Use a personalized MCP URL." }],
+              isError: true,
+            };
+          }
+
+          const result = await saveToInbox(this.env, installationUuid, title, content, {
+            filePath: providedPath,
+          });
+
+          if (result.error) {
+            return {
+              content: [{ type: "text" as const, text: `Note saved to brain inbox (R2 only): ${result.filePath}\nGitHub write failed: ${result.error}` }],
+              structuredContent: { filePath: result.filePath, r2: result.r2, github: result.github, error: result.error },
+            };
+          }
+
+          return {
+            content: [{ type: "text" as const, text: `Note saved to brain inbox: ${result.filePath}` }],
+            structuredContent: { filePath: result.filePath, r2: result.r2, github: result.github },
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          return {
+            content: [{ type: "text" as const, text: `Failed to save note: ${message}` }],
+            isError: true,
+          };
+        }
+      },
+    });
+
+    this.server.sendToolListChanged();
+  }
+
   /**
    * Get the R2 prefix for this DO instance
-   * Checks multiple sources: DO name, or stored state
+   * Checks multiple sources: DO name, stored state, or persistent storage
    */
-  private initR2Prefix(): void {
+  private async initR2Prefix(): Promise<void> {
     try {
       // Try to get the DO name - if created via idFromName(uuid), this will be the uuid
       const doName = (this.ctx as { id?: { name?: string } })?.id?.name;
       if (doName && /^[a-f0-9-]{36}$/.test(doName)) {
         this.r2Prefix = `brains/${doName}/`;
+        return;
       }
     } catch {
-      // Legacy mode - no prefix
-      this.r2Prefix = "";
+      // Fall through to storage check
+    }
+
+    // Fall back to persistent storage (survives hibernation/reconnection)
+    try {
+      const stored = await this.ctx.storage.get<string>("installationId");
+      if (stored) {
+        this.r2Prefix = `brains/${stored}/`;
+      }
+      const storedRepo = await this.ctx.storage.get<string>("repoFullName");
+      if (storedRepo) {
+        this.repoFullName = storedRepo;
+      }
+    } catch {
+      // No stored state
     }
   }
 
@@ -138,16 +234,18 @@ export class HomeBrainMCP extends McpAgent<Env> {
     const installationId = url.searchParams.get("installation");
     const repo = url.searchParams.get("repo");
 
-    // If installation ID provided, set prefix before processing
+    // If installation ID provided, set prefix and persist to storage
     if (installationId && /^[a-f0-9-]{36}$/.test(installationId)) {
       this.r2Prefix = `brains/${installationId}/`;
+      await this.ctx.storage.put("installationId", installationId);
       // Reload brain summary for this installation
       await this.loadBrainSummary();
     }
 
-    // If repo provided, store for source links
+    // If repo provided, store for source links and persist
     if (repo) {
       this.repoFullName = repo;
+      await this.ctx.storage.put("repoFullName", repo);
     }
 
     // Call parent fetch (McpAgent's SSE handler)
@@ -155,8 +253,8 @@ export class HomeBrainMCP extends McpAgent<Env> {
   }
 
   async init() {
-    // Determine R2 prefix for this installation
-    this.initR2Prefix();
+    // Determine R2 prefix for this installation (checks DO name, then persistent storage)
+    await this.initR2Prefix();
     // Try to load brain summary from R2 (non-blocking, cached)
     await this.loadBrainSummary();
     // Register about tool — returns different content based on whether installation is scoped
@@ -164,6 +262,7 @@ export class HomeBrainMCP extends McpAgent<Env> {
       "about",
       "Get information about Git Brain and what this MCP server does.",
       {},
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async () => {
         if (!this.r2Prefix) {
           return {
@@ -191,9 +290,9 @@ Once connected with your personalized URL, you'll have access to search, documen
           content: [
             {
               type: "text" as const,
-              text: `# Git Brain
+              text: `# Brainstem
 
-Git Brain exposes private GitHub repos as remote MCP servers, making your personal knowledge base accessible to Claude.
+Brainstem connects your private GitHub repos to AI assistants as a searchable personal knowledge base.
 
 ## How It Works
 - Content syncs from GitHub to Cloudflare R2 storage
@@ -201,11 +300,15 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
 - MCP server exposes tools to search, browse, and read content
 
 ## Available Tools
-- about: This information
-- search_brain: Semantic search across all content
-- get_document: Read a specific file by path
-- list_recent: See recently modified files
-- list_folders: Browse the folder structure`,
+- **search_brain**: Semantic search across all content
+- **get_document**: Read a specific file by path
+- **list_recent**: See recently modified files
+- **list_folders**: Browse the folder structure
+- **brain_inbox** / **brain_inbox_save**: Save notes to the user's inbox
+- **brain_account**: Set up email-to-brain forwarding, verify sender addresses, claim vanity aliases
+
+## Email Input
+Forward emails to your brainstem address to save them as inbox notes. Use the brain_account tool to configure email forwarding.`,
             },
           ],
         };
@@ -217,7 +320,35 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
     this.registerGetDocument();
     this.registerListRecent();
     this.registerListFolders();
-    await this.registerInbox();
+    this.registerInbox();
+
+    // Register MCP App UI resource for brain_inbox composer
+    this.registerInboxAppResource();
+
+    // Register account management tool (email setup, aliases)
+    this.registerBrainAccount();
+
+    // Strip `execution: { taskSupport: 'forbidden' }` from all tool definitions.
+    // MCP SDK 1.25.2 hardcodes this field into every tool. Claude.ai's proxy rejects
+    // tool definitions with this unknown field (returns -32600 "Invalid content from server").
+    // See ADR-009.
+    const registeredTools = (this.server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
+    for (const tool of Object.values(registeredTools)) {
+      delete (tool as Record<string, unknown>).execution;
+    }
+
+    // After MCP handshake, upgrade inbox tools with Apps metadata for capable clients (ADR-009)
+    this.server.server.oninitialized = () => {
+      try {
+        const caps = this.server.server.getClientCapabilities();
+        const uiCap = getUiCapability(caps as Parameters<typeof getUiCapability>[0]);
+        if (uiCap) {
+          this.upgradeToAppsTools();
+        }
+      } catch {
+        // Client doesn't support Apps — keep standard tool definitions
+      }
+    };
   }
 
   /**
@@ -242,24 +373,27 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
    * Combines hard-coded base with dynamic summary if available
    */
   private buildSearchDescription(): string {
-    // Base description - always present, explains the general nature
-    let description = `Search a personal knowledge base containing notes, documents, and reference materials. ` +
-      `This is a private second-brain system, NOT a general knowledge source. `;
+    let description =
+      `Search the user's personal knowledge base. You have been granted access to use this on their behalf.`;
 
-    // Add dynamic topics if summary is available
+    description +=
+      `\n\nUSE THIS TOOL FOR:` +
+      `\n• Information about the user, their family, projects, or preferences that is unlikely to be in your training data or public web sources` +
+      `\n• Augmenting your own memory of past conversations or user context, which may be incomplete or outdated` +
+      `\n• Anything the user refers to as "the brain", "my brain", "brainstem", "my notes", or "my knowledge base"` +
+      `\n• Questions about the user's personal life, family details, ongoing projects, saved reference materials`;
+
     if (this.brainSummary?.domains?.length) {
-      description += `\n\nKnowledge domains include (but are not limited to): ${this.brainSummary.domains.join(", ")}. `;
+      description += `\n\nKnowledge domains: ${this.brainSummary.domains.join(", ")} (non-exhaustive).`;
     }
 
     if (this.brainSummary?.topics?.length) {
-      description += `\n\nSample topics: ${this.brainSummary.topics.slice(0, 10).join(", ")}. `;
-      description += `Note: This is a sample - the knowledge base may contain additional topics not listed here. `;
+      description += `\n\nSample topics: ${this.brainSummary.topics.slice(0, 10).join(", ")} (the knowledge base contains more).`;
     }
 
-    // Guidance on when to use (and not use)
-    description += `\n\nUse this tool for: Personal notes, project documentation, family information, reference materials stored in this specific knowledge base. `;
-    description += `\n\nDO NOT use for: General knowledge questions, current events, or information that would be in public sources. ` +
-      `If unsure whether information is in this knowledge base, it's worth trying a search. `;
+    description +=
+      `\n\nDO NOT USE FOR: General knowledge (Wikipedia-style facts), current events, or information available in public sources. ` +
+      `This contains only what the user has personally saved.`;
 
     description += `\n\nReturns relevant passages with source document links.`;
 
@@ -294,6 +428,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           .default(5)
           .describe("Maximum number of results (default: 5, max: 20)"),
       },
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async ({ query, limit }) => {
         try {
           const maxResults = Math.min(limit ?? 5, 20);
@@ -328,11 +463,13 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           }
 
           // Format results with source links
+          // Strip R2 prefix (brains/{uuid}/) from filenames for display and URL building
           const output = response.data
             .map((r, i) => {
               const contentText = r.content.map((c) => c.text).join("\n");
-              const sourceLink = this.getSourceUrl(r.filename);
-              return `## ${i + 1}. ${r.filename}\n**Score:** ${r.score.toFixed(2)} | **Source:** ${sourceLink}\n\n${contentText}`;
+              const displayPath = this.r2Prefix ? r.filename.replace(this.r2Prefix, "") : r.filename;
+              const sourceLink = this.getSourceUrl(displayPath);
+              return `## ${i + 1}. ${displayPath}\n**Score:** ${r.score.toFixed(2)} | **Source:** ${sourceLink}\n\n${contentText}`;
             })
             .join("\n\n---\n\n");
 
@@ -370,6 +507,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
       {
         path: z.string().describe("Path to the document (e.g., 'projects/cnc/notes.md')"),
       },
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async ({ path }) => {
         try {
           // Normalize path - remove leading slash if present
@@ -433,6 +571,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           .optional()
           .describe("Optional path prefix to filter results"),
       },
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async ({ limit, path_prefix }) => {
         try {
           const maxFiles = Math.min(limit ?? 10, 50);
@@ -512,108 +651,340 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
   }
 
   /**
-   * inbox - Accept notes and add them as .md files to the inbox folder
-   * Only registered if an inbox/ folder exists in R2
+   * brain_inbox - Compose a note for the inbox (preview before save in UI hosts)
    */
-  private async registerInbox() {
-    this.server.tool(
-      "inbox",
-      "Add a note to the brain's inbox. Creates a new .md file in the inbox/ folder of the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder for later.",
+  private static readonly INBOX_RESOURCE_URI = "ui://brain-inbox/composer.html";
+
+  private registerInbox() {
+    // Compose tool — returns draft text, does NOT save directly.
+    // In UI hosts (after upgrade): composer app handles countdown + editing + save.
+    // In non-UI hosts: returns draft content only — use brain_inbox_save to actually save.
+    // Registered without _meta so Claude.ai proxy doesn't reject it (ADR-009).
+    this._inboxTool = this.server.registerTool(
+      "brain_inbox",
       {
-        title: z
-          .string()
-          .describe(
-            "Short title for the note (used as filename, e.g. 'grocery-list')"
-          ),
-        content: z
-          .string()
-          .describe("The markdown content of the note"),
+        description: "Preview a note before saving to the inbox (UI hosts only). In UI-capable hosts, shows an interactive composer with editing and countdown before save. For non-UI hosts or AI agents, use brain_inbox_save instead to save notes directly.",
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        inputSchema: {
+          title: z
+            .string()
+            .describe(
+              "Short title for the note (used as filename, e.g. 'grocery-list')"
+            ),
+          content: z
+            .string()
+            .describe("The markdown content of the note"),
+        },
       },
       async ({ title, content }) => {
+        const safeTitle = sanitizeInboxTitle(title);
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .slice(0, 19);
+        const filePath = `inbox/${timestamp}-${safeTitle}.md`;
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Note draft prepared: ${filePath}\nTitle: ${title}\n\nThis note has NOT been saved yet. In UI hosts, use the composer to review and save. In non-UI hosts, call brain_inbox_save with the title and content to save.`,
+            },
+          ],
+        };
+      }
+    );
+
+    // Save tool — directly saves a note to the inbox. Preferred for non-UI hosts and AI agents.
+    // In UI hosts, the composer app may call this after countdown/edit.
+    // Registered without _meta so Claude.ai proxy doesn't reject it (ADR-009).
+    this._inboxSaveTool = this.server.registerTool(
+      "brain_inbox_save",
+      {
+        description: "Save a note to the brain inbox. Creates a .md file in the inbox/ folder, writes to both R2 and the connected GitHub repo. Use this when the user wants to save a thought, note, or reminder. Provide a short title (used as filename) and the markdown content.",
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        inputSchema: {
+          title: z.string().describe("Short title for the note (used as filename, e.g. 'grocery-list')"),
+          content: z.string().describe("The markdown content of the note"),
+          filePath: z.string().optional().describe("Optional custom file path. If omitted, auto-generates as inbox/{timestamp}-{title}.md"),
+        },
+      },
+      async ({ title, content, filePath: providedPath }) => {
         try {
-          // Sanitize title for use as filename
-          const safeTitle = title
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .slice(0, 80);
-          const timestamp = new Date()
-            .toISOString()
-            .replace(/[:.]/g, "-")
-            .slice(0, 19);
-          const filename = `${timestamp}-${safeTitle}.md`;
-          const filePath = `inbox/${filename}`;
+          const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
+          if (!installationUuid) {
+            return {
+              content: [{ type: "text" as const, text: "Cannot save: no installation context. Use a personalized MCP URL." }],
+              isError: true,
+            };
+          }
 
-          // Write to R2 (scoped to installation prefix only)
-          await this.env.R2.put(
-            `${this.r2Prefix}${filePath}`,
-            content
-          );
+          const result = await saveToInbox(this.env, installationUuid, title, content, {
+            filePath: providedPath,
+          });
 
-          // Write to GitHub repo so the note persists in the source repo
-          if (this.repoFullName && this.r2Prefix) {
-            try {
-              const [owner, repo] = this.repoFullName.split("/");
-              // Extract installation UUID from r2Prefix ("brains/{uuid}/")
-              const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
-              if (installationUuid) {
-                const installation = await this.env.DB.prepare(
-                  "SELECT github_installation_id FROM installations WHERE id = ?"
-                ).bind(installationUuid).first<{ github_installation_id: number }>();
-
-                if (installation) {
-                  const token = await getInstallationToken(
-                    this.env,
-                    installation.github_installation_id
-                  );
-                  await createRepoFile(
-                    token,
-                    owner,
-                    repo,
-                    filePath,
-                    content,
-                    `Add inbox note: ${title}`
-                  );
-                }
-              }
-            } catch (ghError) {
-              console.error("Failed to write to GitHub:", ghError);
-              // Surface error in response for diagnostics
-              const ghMsg = ghError instanceof Error ? ghError.message : "unknown";
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: `Note saved to inbox (R2 only): ${filePath}\nGitHub write failed: ${ghMsg}`,
-                  },
-                ],
-              };
-            }
+          if (result.error) {
+            return {
+              content: [{ type: "text" as const, text: `Note saved to brain inbox (R2 only): ${result.filePath}\nGitHub write failed: ${result.error}` }],
+            };
           }
 
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Note saved to inbox: ${filePath}`,
-              },
-            ],
+            content: [{ type: "text" as const, text: `Note saved to brain inbox: ${result.filePath}` }],
           };
         } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "Unknown error";
+          const message = error instanceof Error ? error.message : "Unknown error";
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Failed to save note: ${message}`,
-              },
-            ],
+            content: [{ type: "text" as const, text: `Failed to save note: ${message}` }],
             isError: true,
           };
         }
       }
     );
+  }
+
+  /**
+   * Register the MCP App UI resource for the brain_inbox composer
+   */
+  private registerInboxAppResource() {
+    const uri = HomeBrainMCP.INBOX_RESOURCE_URI;
+    registerAppResource(
+      this.server,
+      "Brain Inbox Composer",
+      uri,
+      { mimeType: RESOURCE_MIME_TYPE },
+      async () => ({
+        contents: [
+          { uri, mimeType: RESOURCE_MIME_TYPE, text: brainInboxHtml },
+        ],
+      }),
+    );
+  }
+
+  /**
+   * brain_account - Manage email forwarding, verified senders, and vanity aliases
+   */
+  private registerBrainAccount() {
+    this.server.tool(
+      "brain_account",
+      `Set up and manage email-to-brain forwarding. Users forward emails to their @brainstem.cc address and they appear as inbox notes.` +
+      `\n\nUSE THIS TOOL FOR:` +
+      `\n• Setting up email forwarding to the brain inbox` +
+      `\n• Verifying a personal email address as an authorized sender` +
+      `\n• Claiming a vanity address like "name@brainstem.cc"` +
+      `\n• Checking email configuration status` +
+      `\n• Removing a previously verified email address` +
+      `\n\nActions: request_email (start verification for a sender address), check_alias / request_alias (vanity addresses), remove_email, status (show current config — use this first).`,
+      {
+        action: z.enum([
+          "request_email",
+          "check_alias",
+          "request_alias",
+          "remove_email",
+          "status",
+        ]).describe("Action to perform"),
+        email: z.string().email().optional().describe("Email address (for request_email, remove_email)"),
+        alias: z.string().optional().describe("Vanity alias name without @brainstem.cc (for check_alias, request_alias)"),
+      },
+      { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      async ({ action, email, alias }) => {
+        const installationUuid = this.r2Prefix.replace("brains/", "").replace(/\/$/, "");
+        if (!installationUuid) {
+          return {
+            content: [{ type: "text" as const, text: "Email setup requires a personalized MCP URL. Visit https://brainstem.cc/setup to get started." }],
+            isError: true,
+          };
+        }
+
+        try {
+          await ensureEmailTables(this.env.DB);
+
+          switch (action) {
+            case "request_email":
+              return await this.handleRequestEmail(installationUuid, email);
+            case "check_alias":
+              return await this.handleCheckAlias(alias);
+            case "request_alias":
+              return await this.handleRequestAlias(installationUuid, alias);
+            case "remove_email":
+              return await this.handleRemoveEmail(installationUuid, email);
+            case "status":
+              return await this.handleEmailStatus(installationUuid);
+            default:
+              return { content: [{ type: "text" as const, text: `Unknown action: ${action}` }], isError: true };
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "Unknown error";
+          return { content: [{ type: "text" as const, text: `Account operation failed: ${msg}` }], isError: true };
+        }
+      }
+    );
+  }
+
+  private async handleRequestEmail(installationUuid: string, email?: string) {
+    if (!email) {
+      return { content: [{ type: "text" as const, text: "Please provide an email address to verify." }], isError: true };
+    }
+
+    // Ensure default alias exists (enable email on first use)
+    const defaultAlias = `brain+${installationUuid}`;
+    await this.env.DB.prepare(
+      "INSERT OR IGNORE INTO email_aliases (alias, installation_id, type, created_at) VALUES (?, ?, 'default', ?)"
+    ).bind(defaultAlias, installationUuid, new Date().toISOString()).run();
+
+    // Check if already confirmed
+    const existing = await this.env.DB.prepare(
+      "SELECT status FROM verified_senders WHERE installation_id = ? AND email = ?"
+    ).bind(installationUuid, email.toLowerCase()).first<{ status: string }>();
+
+    if (existing?.status === "confirmed") {
+      return {
+        content: [{ type: "text" as const, text: `${email} is already verified for this brain.` }],
+      };
+    }
+
+    // Generate confirmation code
+    const code = generateConfirmationCode();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const brainstemAddress = `${defaultAlias}@brainstem.cc`;
+
+    if (existing) {
+      // Update existing pending entry with new code
+      await this.env.DB.prepare(
+        "UPDATE verified_senders SET confirmation_code = ?, confirmation_expires_at = ? WHERE installation_id = ? AND email = ?"
+      ).bind(code, expiresAt, installationUuid, email.toLowerCase()).run();
+    } else {
+      // Insert new pending entry
+      await this.env.DB.prepare(
+        `INSERT INTO verified_senders (id, installation_id, email, status, confirmation_code, confirmation_expires_at, created_at)
+         VALUES (?, ?, ?, 'pending', ?, ?, ?)`
+      ).bind(crypto.randomUUID(), installationUuid, email.toLowerCase(), code, expiresAt, new Date().toISOString()).run();
+    }
+
+    // Also check for vanity alias
+    const vanity = await this.env.DB.prepare(
+      "SELECT alias FROM email_aliases WHERE installation_id = ? AND type = 'vanity'"
+    ).bind(installationUuid).first<{ alias: string }>();
+    const addresses = [brainstemAddress];
+    if (vanity) addresses.push(`${vanity.alias}@brainstem.cc`);
+
+    return {
+      content: [{
+        type: "text" as const,
+        text: `To verify ${email}, send an email with the subject **${code}** to **${brainstemAddress}** from ${email}.\n\nThe code expires in 24 hours.${vanity ? `\n\nYou can also send to: ${vanity.alias}@brainstem.cc` : ""}`,
+      }],
+    };
+  }
+
+  private async handleCheckAlias(alias?: string) {
+    if (!alias) {
+      return { content: [{ type: "text" as const, text: "Please provide an alias to check." }], isError: true };
+    }
+
+    const validation = validateAlias(alias);
+    if (!validation.valid) {
+      return { content: [{ type: "text" as const, text: `Invalid alias: ${validation.error}` }] };
+    }
+
+    const existing = await this.env.DB.prepare(
+      "SELECT alias FROM email_aliases WHERE alias = ?"
+    ).bind(alias).first<{ alias: string }>();
+
+    return {
+      content: [{
+        type: "text" as const,
+        text: existing
+          ? `${alias}@brainstem.cc is already taken.`
+          : `${alias}@brainstem.cc is available!`,
+      }],
+    };
+  }
+
+  private async handleRequestAlias(installationUuid: string, alias?: string) {
+    if (!alias) {
+      return { content: [{ type: "text" as const, text: "Please provide an alias to claim." }], isError: true };
+    }
+
+    const validation = validateAlias(alias);
+    if (!validation.valid) {
+      return { content: [{ type: "text" as const, text: `Invalid alias: ${validation.error}` }], isError: true };
+    }
+
+    // Enforce 1 vanity alias per installation
+    const existingVanity = await this.env.DB.prepare(
+      "SELECT alias FROM email_aliases WHERE installation_id = ? AND type = 'vanity'"
+    ).bind(installationUuid).first<{ alias: string }>();
+
+    if (existingVanity) {
+      return {
+        content: [{ type: "text" as const, text: `You already have a vanity alias: ${existingVanity.alias}@brainstem.cc. Only one vanity alias per installation is allowed.` }],
+        isError: true,
+      };
+    }
+
+    // Try to claim (PK constraint prevents races)
+    try {
+      await this.env.DB.prepare(
+        "INSERT INTO email_aliases (alias, installation_id, type, created_at) VALUES (?, ?, 'vanity', ?)"
+      ).bind(alias, installationUuid, new Date().toISOString()).run();
+    } catch {
+      return { content: [{ type: "text" as const, text: `${alias}@brainstem.cc is already taken.` }] };
+    }
+
+    return {
+      content: [{ type: "text" as const, text: `Claimed! Your brainstem address is now **${alias}@brainstem.cc**. Both this and brain+${installationUuid}@brainstem.cc will work.` }],
+    };
+  }
+
+  private async handleRemoveEmail(installationUuid: string, email?: string) {
+    if (!email) {
+      return { content: [{ type: "text" as const, text: "Please provide an email address to remove." }], isError: true };
+    }
+
+    const result = await this.env.DB.prepare(
+      "DELETE FROM verified_senders WHERE installation_id = ? AND email = ?"
+    ).bind(installationUuid, email.toLowerCase()).run();
+
+    if (result.meta.changes === 0) {
+      return { content: [{ type: "text" as const, text: `${email} was not found in your verified senders.` }] };
+    }
+
+    return { content: [{ type: "text" as const, text: `Removed ${email} from verified senders.` }] };
+  }
+
+  private async handleEmailStatus(installationUuid: string) {
+    const aliases = await this.env.DB.prepare(
+      "SELECT alias, type FROM email_aliases WHERE installation_id = ?"
+    ).bind(installationUuid).all<{ alias: string; type: string }>();
+
+    const senders = await this.env.DB.prepare(
+      "SELECT email, status, confirmed_at FROM verified_senders WHERE installation_id = ?"
+    ).bind(installationUuid).all<{ email: string; status: string; confirmed_at: string | null }>();
+
+    if (!aliases.results?.length) {
+      return {
+        content: [{ type: "text" as const, text: "Email forwarding is not set up yet. Use `request_email` with your email address to get started." }],
+      };
+    }
+
+    let output = "## Email Configuration\n\n";
+
+    output += "### Brainstem Addresses\n";
+    for (const a of aliases.results) {
+      output += `- **${a.alias}@brainstem.cc** (${a.type})\n`;
+    }
+
+    output += "\n### Verified Senders\n";
+    if (senders.results?.length) {
+      for (const s of senders.results) {
+        const statusEmoji = s.status === "confirmed" ? "confirmed" : "pending";
+        output += `- ${s.email} — ${statusEmoji}${s.confirmed_at ? ` (since ${s.confirmed_at.split("T")[0]})` : ""}\n`;
+      }
+    } else {
+      output += "No verified senders yet.\n";
+    }
+
+    return { content: [{ type: "text" as const, text: output }] };
   }
 
   /**
@@ -630,6 +1001,7 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           .default("")
           .describe("Path to list (empty or '/' for root)"),
       },
+      { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       async ({ path }) => {
         try {
           // Normalize user-provided path
@@ -705,6 +1077,44 @@ Git Brain exposes private GitHub repos as remote MCP servers, making your person
           };
         }
       }
+    );
+
+    // Register prompts for explicit tool invocation via slash commands
+    this.server.prompt(
+      "brain_search",
+      "Search your personal knowledge base (invokes search_brain tool)",
+      { query: z.string().describe("What to search for in the knowledge base") },
+      async ({ query }) => ({
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `Use the search_brain tool to search my knowledge base for: ${query}\n\nCall the search_brain tool now with this query.`,
+            },
+          },
+        ],
+      })
+    );
+
+    this.server.prompt(
+      "brain_inbox",
+      "Add a quick note to your brain inbox (invokes brain_inbox tool)",
+      {
+        title: z.string().describe("Title for the note"),
+        content: z.string().describe("Content of the note"),
+      },
+      async ({ title, content }) => ({
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: `Use the brain_inbox tool to save a note to my inbox with the following:\n\nTitle: ${title}\n\nContent:\n${content}\n\nCall the brain_inbox tool now with these parameters.`,
+            },
+          },
+        ],
+      })
     );
   }
 }
@@ -786,6 +1196,7 @@ function handleProtectedResourceMetadata(): Response {
   return new Response(JSON.stringify({
     resource: "https://brainstem.cc",
     authorization_servers: ["https://brainstem.cc"],
+    scopes_supported: [],
     bearer_methods_supported: ["header"],
   }), {
     headers: {
@@ -875,8 +1286,8 @@ async function verifyInstallationOwnership(
   return installation?.user_id === userId;
 }
 
-// Create the base MCP handler
-const mcpHandler = HomeBrainMCP.serveSSE("/mcp");
+// Create the base MCP handler (Streamable HTTP transport for Claude.ai proxy compatibility)
+const mcpHandler = HomeBrainMCP.serve("/mcp");
 
 // Installation record type
 interface Installation {
@@ -908,7 +1319,7 @@ function handleHomepage(env: Env): Response {
   const appName = env.GITHUB_APP_NAME || "git-brain-stem";
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Brain Stem - Give your AI a second brain</title>
@@ -922,25 +1333,63 @@ function handleHomepage(env: Env): Response {
       <p class="tagline" style="margin-bottom: 0;">Connect your GitHub-based PKM to any MCP-compatible AI client.</p>
     </div>
 
-    <p>Brainstem connects your personal knowledge base on GitHub to AI chat clients like Claude Mobile, giving your AI fast, simple access to your notes and context. Currently supports <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.yaml</code>, and <code>.yml</code> files.</p>
+    <p>Brainstem connects your personal knowledge base on GitHub to AI chat clients like Claude Mobile, giving your AI fast, simple access to your notes and context. Currently supports <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.yaml</code>, <code>.yml</code>, <code>.toml</code>, <code>.rst</code>, and <code>.adoc</code> files.</p>
 
-    <img src="/diagram.png" alt="How Brainstem works" style="width: 100%; height: auto; margin: 1.5rem 0; border-radius: 8px;">
+    <img src="/diagram.png?v=2" alt="How Brainstem works" style="width: 100%; height: auto; margin: 1.5rem 0; border-radius: 8px;">
 
     <h2>How it works</h2>
 
     <div class="step">
-      <p><span class="step-number">1.</span> <span class="step-title">You have a GitHub-hosted PKM</span></p>
-      <p class="muted">A "second brain" repo — private or public. Maybe you maintain it with Claude Code, Codex, or another agent. Maybe it's an Obsidian vault backed by git. Maybe it's just markdown files.</p>
+      <p><span class="step-number">1.</span> <span class="step-title">You maintain a "second brain"</span></p>
+      <p class="muted">Notes, docs, or a knowledge base in a private GitHub repo. Maybe you use Obsidian, Claude Code, or just markdown files.</p>
     </div>
 
     <div class="step">
-      <p><span class="step-number">2.</span> <span class="step-title">Install the Brainstem GitHub App</span></p>
-      <p class="muted">Connect your repo. Brainstem embeds your content and keeps itself up-to-date with every push.</p>
+      <p><span class="step-number">2.</span> <span class="step-title">Connect it to Brain Stem</span></p>
+      <p class="muted">Install our GitHub App on your repo. We sync your files and index them for semantic search.</p>
     </div>
 
     <div class="step">
-      <p><span class="step-number">3.</span> <span class="step-title">Search and retrieve from any AI chat client</span></p>
-      <p class="muted">Brainstem exposes your repo via MCP tools. Connect it to Claude Mobile, Claude Desktop, or any compatible client.</p>
+      <p><span class="step-number">3.</span> <span class="step-title">Your MCP-compatible AI client can access it</span></p>
+      <p class="muted">Claude Desktop, Claude Code, Claude.ai, or other MCP-compatible clients can search and retrieve from your brain.</p>
+    </div>
+
+    <h2>Ways to save</h2>
+
+    <div class="step">
+      <p><span class="step-title">Email forwarding</span></p>
+      <p class="muted">Forward any email to your brainstem address and it's saved as an inbox note. Set up via the <code>brain_account</code> tool in your AI client.</p>
+    </div>
+
+    <div class="step">
+      <p><span class="step-title">Web clipper</span></p>
+      <p class="muted">A browser bookmarklet that extracts and saves articles with one click. Available on your <a href="/oauth/authorize">OAuth success page</a>.</p>
+    </div>
+
+    <div class="step">
+      <p><span class="step-title">Inbox tools</span></p>
+      <p class="muted">Ask your AI to save notes, reminders, or thoughts directly via <code>brain_inbox</code> or <code>brain_inbox_save</code>.</p>
+    </div>
+
+    <h2>Tools</h2>
+    <p class="muted">Brainstem exposes eight tools over MCP. Your AI client discovers them automatically when connected.</p>
+
+    <div style="margin-top: 0.75rem;">
+      <p style="margin-bottom: 0.5rem;"><code>search_brain</code> <span class="muted">&mdash; Semantic search across your knowledge base. Returns relevant passages with source links.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>get_document</code> <span class="muted">&mdash; Retrieve the full contents of a file by path.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>list_recent</code> <span class="muted">&mdash; List recently modified files, optionally filtered by path prefix.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>list_folders</code> <span class="muted">&mdash; Browse the folder structure of your knowledge base.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>brain_inbox</code> <span class="muted">&mdash; Save a note with an interactive preview (Claude Desktop).</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>brain_inbox_save</code> <span class="muted">&mdash; Save a note directly to the inbox (all clients).</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>brain_account</code> <span class="muted">&mdash; Set up email-to-brain forwarding and vanity aliases.</span></p>
+      <p style="margin-bottom: 0.5rem;"><code>about</code> <span class="muted">&mdash; Information about your Brainstem instance and available tools.</span></p>
+    </div>
+
+    <p class="muted" style="text-align: center; margin-top: 1.5rem;">That's it. No complex setup. Push to GitHub, forward an email, clip a webpage, or ask your AI to take a note &mdash; it's all searchable within a minute.</p>
+
+    <div style="margin-top: 1.5rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px; background: #fafafa;">
+      <p style="margin: 0 0 0.5rem 0; font-weight: 600; font-size: 0.9rem;">Security &amp; Privacy</p>
+      <p class="muted" style="margin: 0; font-size: 0.85rem;">Your files are stored on Cloudflare R2 (encrypted at rest) and indexed by Cloudflare AI Search. The platform operator has technical access to stored content for operational purposes. Do not connect repositories containing secrets, credentials, or highly sensitive data. You can disconnect and delete your data at any time by uninstalling the GitHub App.</p>
     </div>
 
     <hr>
@@ -954,7 +1403,121 @@ function handleHomepage(env: Env): Response {
     </p>
 
     <div class="footer">
-      <p>Brainstem is open source. <a href="https://github.com/dudgeon/git-brain">View on GitHub</a></p>
+      <p>Brainstem is open source. <a href="https://github.com/dudgeon/git-brain">View on GitHub</a> · <a href="/privacy">Privacy Policy</a></p>
+    </div>
+  </div>
+</body>
+</html>`;
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+/**
+ * Handle /privacy - Privacy policy
+ */
+function handlePrivacyPolicy(): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Brainstem</title>
+  <style>${SITE_STYLES}</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <p class="muted">Last updated: February 16, 2026</p>
+
+    <p>Brainstem ("we", "us", "our") is a service that connects your private GitHub repositories to AI chat clients as a searchable knowledge base. This policy describes how we collect, use, and protect your information.</p>
+
+    <h2>Information We Collect</h2>
+
+    <h3>Account Information</h3>
+    <p>When you connect via GitHub OAuth, we collect:</p>
+    <ul>
+      <li><strong>GitHub username and user ID</strong> &mdash; to identify your account</li>
+      <li><strong>GitHub OAuth access token</strong> &mdash; to access your authorized repositories</li>
+    </ul>
+
+    <h3>Repository Content</h3>
+    <p>When you install the Brainstem GitHub App on a repository, we sync and store text files from that repository. Supported file types include <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.yaml</code>, <code>.yml</code>, <code>.toml</code>, <code>.rst</code>, and <code>.adoc</code>. Binary files, code files, and sensitive files (e.g., <code>.env</code>, credentials) are excluded.</p>
+
+    <h3>Session Data</h3>
+    <p>We create session tokens when you authenticate. Sessions contain a unique ID, your user ID, and an expiration date.</p>
+
+    <h3>Email Data</h3>
+    <p>If you set up email forwarding, we store:</p>
+    <ul>
+      <li>Your verified sender email addresses</li>
+      <li>Your brainstem email aliases</li>
+      <li>A log of received emails (sender, recipient, subject, status) retained for 7 days</li>
+    </ul>
+
+    <h3>Web Clips</h3>
+    <p>When you use the bookmarklet or iOS Shortcut, we store the article URL, title, and extracted content as a note in your brain.</p>
+
+    <h3>Usage Logs</h3>
+    <p>We log GitHub webhook events (event type, installation ID, status) for debugging. Webhook logs are retained briefly and do not contain repository content.</p>
+
+    <h2>How We Use Your Information</h2>
+    <ul>
+      <li><strong>Providing the service</strong> &mdash; syncing files, indexing for search, serving MCP tool responses</li>
+      <li><strong>Authentication</strong> &mdash; verifying your identity and authorizing access to your data</li>
+      <li><strong>Email processing</strong> &mdash; routing and storing forwarded emails as inbox notes</li>
+      <li><strong>Debugging</strong> &mdash; diagnosing sync failures or webhook delivery issues</li>
+    </ul>
+    <p>We do not use your data for advertising, analytics, model training, or any purpose beyond operating the Brainstem service.</p>
+
+    <h2>Infrastructure and Data Storage</h2>
+    <p>Your data is stored on Cloudflare infrastructure:</p>
+    <ul>
+      <li><strong>Cloudflare R2</strong> &mdash; file storage (encrypted at rest with AES-256-GCM, Cloudflare-managed keys)</li>
+      <li><strong>Cloudflare D1</strong> &mdash; account records, sessions, email configuration</li>
+      <li><strong>Cloudflare AI Search</strong> &mdash; semantic search index over your files</li>
+    </ul>
+    <p>All data is encrypted in transit (TLS) and at rest. The platform operator has technical access to stored content for operational purposes.</p>
+
+    <h2>Data Sharing</h2>
+    <p>We do not sell, rent, or share your data with third parties. Your data is only accessed by:</p>
+    <ul>
+      <li><strong>You</strong> &mdash; via MCP tools in your AI client</li>
+      <li><strong>Cloudflare</strong> &mdash; as our infrastructure provider (subject to <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a>)</li>
+      <li><strong>GitHub</strong> &mdash; we use GitHub's API to read your repository content (subject to <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>)</li>
+    </ul>
+
+    <h2>Data Retention and Deletion</h2>
+    <p>Your data is retained as long as you have the Brainstem GitHub App installed. When you uninstall the GitHub App:</p>
+    <ul>
+      <li>All synced files are deleted from R2</li>
+      <li>Your installation record is deleted from D1</li>
+      <li>All active sessions are revoked</li>
+      <li>Email aliases, verified senders, and email logs are deleted</li>
+      <li>AI Search vectors are removed on the next reindex</li>
+    </ul>
+    <p>Deletion is automatic and triggered by the GitHub App uninstall webhook.</p>
+
+    <h2>Your Controls</h2>
+    <ul>
+      <li><strong>Disconnect anytime</strong> &mdash; uninstall the GitHub App from your GitHub settings to trigger full data deletion</li>
+      <li><strong>Choose what to sync</strong> &mdash; only the repository you connect is synced; you control what files are in that repo</li>
+      <li><strong>Revoke access</strong> &mdash; revoke the GitHub OAuth authorization from your GitHub settings</li>
+    </ul>
+
+    <h2>Security</h2>
+    <p>We use industry-standard security measures including encrypted storage, HMAC-verified webhooks, OAuth 2.1 with PKCE, and bearer token authentication. Session tokens expire after one year.</p>
+
+    <h2>Children's Privacy</h2>
+    <p>Brainstem is not intended for use by anyone under the age of 13. We do not knowingly collect personal information from children under 13.</p>
+
+    <h2>Changes to This Policy</h2>
+    <p>We may update this policy from time to time. Changes will be posted on this page with an updated "Last updated" date.</p>
+
+    <h2>Contact</h2>
+    <p>For questions about this privacy policy or your data, contact us at <a href="mailto:privacy@brainstem.cc">privacy@brainstem.cc</a>.</p>
+
+    <hr>
+    <div class="footer">
+      <p><a href="/">Home</a> · <a href="https://github.com/dudgeon/git-brain">Source</a></p>
     </div>
   </div>
 </body>
@@ -982,7 +1545,7 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
   if (setupAction === "cancel") {
     return new Response(`<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Installation Cancelled - Brain Stem</title>
@@ -1026,7 +1589,7 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
     if (repos.length === 0) {
       return new Response(`<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>No Repositories - Brain Stem</title>
@@ -1083,7 +1646,7 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
     console.error("Setup callback error:", error);
     return new Response(`<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Setup Error - Brain Stem</title>
@@ -1106,7 +1669,7 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
 function renderSuccessPage(mcpUrl: string, repoName: string): Response {
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Connected! - Brain Stem</title>
@@ -1115,7 +1678,7 @@ function renderSuccessPage(mcpUrl: string, repoName: string): Response {
 <body>
   <div class="container">
     <h1 class="success">Connected!</h1>
-    <p>Your repository <strong>${escapeHtml(repoName)}</strong> is now synced and searchable.</p>
+    <p>Your repository <strong>${escapeHtml(repoName)}</strong> is now connected. Content will be synced and searchable after your next push.</p>
 
     <hr>
 
@@ -1149,6 +1712,20 @@ function renderSuccessPage(mcpUrl: string, repoName: string): Response {
     <h2>Your endpoint</h2>
     <div class="highlight">${escapeHtml(mcpUrl)}</div>
 
+    <hr>
+
+    <h2>What else can you do?</h2>
+    <p class="muted">Once connected, your AI has access to eight tools: search, document retrieval, folder browsing, note-taking, and email forwarding setup.</p>
+    <ul>
+      <li><strong>Save web pages:</strong> Get the bookmarklet from your <a href="/oauth/authorize">OAuth success page</a></li>
+      <li><strong>Forward emails:</strong> Set up email-to-brain by asking your AI about <code>brain_account</code></li>
+    </ul>
+
+    <hr>
+
+    <h2>Already installed?</h2>
+    <p>Need a new token? You can <a href="/oauth/authorize">re-authorize with GitHub</a> at any time to get a fresh bearer token.</p>
+
     <div class="footer">
       <p>Questions? Check the <a href="https://github.com/dudgeon/git-brain/blob/main/TROUBLESHOOTING.md">troubleshooting guide</a>.</p>
     </div>
@@ -1156,54 +1733,6 @@ function renderSuccessPage(mcpUrl: string, repoName: string): Response {
 </body>
 </html>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-}
-
-/**
- * Trigger AI Search re-indexing via Cloudflare API
- * This is needed because AI Search only auto-indexes every 6 hours
- * Endpoint: POST /accounts/{account_id}/ai-search/instances/{name}/jobs
- */
-async function triggerAISearchReindex(env: Env): Promise<{ success: boolean; message: string }> {
-  if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_API_TOKEN) {
-    console.log("AI Search reindex skipped: missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN");
-    return { success: false, message: "Missing API credentials for AI Search reindex" };
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai-search/instances/${env.AUTORAG_NAME}/jobs`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    const data = await response.json() as { success: boolean; errors?: Array<{ code: number; message: string }> };
-
-    if (data.success) {
-      console.log("AI Search reindex triggered successfully");
-      return { success: true, message: "Reindex triggered" };
-    } else {
-      const errorCode = data.errors?.[0]?.code;
-      const errorMsg = data.errors?.[0]?.message || "Unknown error";
-
-      // sync_in_cooldown (7020) means a sync was already triggered recently - not a real error
-      if (errorCode === 7020) {
-        console.log("AI Search sync in cooldown period (sync already triggered recently)");
-        return { success: true, message: "Sync already in progress or recently completed" };
-      }
-
-      console.error("AI Search reindex failed:", errorMsg);
-      return { success: false, message: errorMsg };
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("AI Search reindex error:", error);
-    return { success: false, message };
-  }
 }
 
 /**
@@ -1283,14 +1812,17 @@ async function handleGitHubWebhook(request: Request, env: Env): Promise<Response
       const token = await getInstallationToken(env, parseInt(githubInstallationId));
       const [owner, repo] = installation.repo_full_name.split("/");
 
-      // Extract changed files from push payload (incremental sync)
-      const changedFiles = extractChangedFiles(payload);
+      // Extract changed and removed files from push payload (incremental sync)
+      const { changed, removed } = extractChangedFiles(payload);
 
-      if (changedFiles.length > 0) {
-        await syncChangedFiles(env, installation.id, owner, repo, token, changedFiles);
-        const summary = `Synced ${changedFiles.length} files: ${changedFiles.slice(0, 3).join(", ")}${changedFiles.length > 3 ? "..." : ""}`;
+      if (changed.length > 0 || removed.length > 0) {
+        await syncChangedFiles(env, installation.id, owner, repo, token, changed, removed);
+        const parts: string[] = [];
+        if (changed.length > 0) parts.push(`synced ${changed.length} files: ${changed.slice(0, 3).join(", ")}${changed.length > 3 ? "..." : ""}`);
+        if (removed.length > 0) parts.push(`deleted ${removed.length} files: ${removed.slice(0, 3).join(", ")}${removed.length > 3 ? "..." : ""}`);
+        const summary = parts.join("; ");
         await logWebhook(env, event, installation.id, summary, "success");
-        console.log(`Incremental sync: ${changedFiles.length} files for ${installation.repo_full_name}`);
+        console.log(`Incremental sync for ${installation.repo_full_name}: ${summary}`);
       } else {
         await logWebhook(env, event, installation.id, "push with no syncable files", "success");
         console.log(`No syncable files changed in push to ${installation.repo_full_name}`);
@@ -1413,39 +1945,8 @@ async function handleUserMcp(
   rewrittenUrl.searchParams.set("repo", installation.repo_full_name);
   const rewrittenRequest = new Request(rewrittenUrl.toString(), request);
 
-  // Forward to the MCP handler (which handles SSE setup properly)
+  // Forward to the MCP handler (Streamable HTTP transport)
   return mcpHandler.fetch(rewrittenRequest, env, ctx);
-}
-
-/**
- * Extract changed files from a GitHub push webhook payload
- */
-function extractChangedFiles(payload: { commits?: Array<{ added?: string[]; modified?: string[]; removed?: string[] }> }): string[] {
-  const changedFiles = new Set<string>();
-  const textExtensions = ["md", "txt", "json", "yaml", "yml", "toml", "rst", "adoc"];
-  const sensitiveFiles = [".env", ".env.local", ".env.production", ".mcp.json", "credentials.json", "secrets.json", ".npmrc", ".pypirc"];
-
-  for (const commit of payload.commits || []) {
-    // Add added and modified files
-    for (const file of [...(commit.added || []), ...(commit.modified || [])]) {
-      const ext = file.split(".").pop()?.toLowerCase();
-      const fileName = file.split("/").pop()?.toLowerCase() || "";
-
-      // Skip sensitive files
-      if (sensitiveFiles.includes(fileName) || fileName.startsWith(".env.")) {
-        continue;
-      }
-
-      // Only include text files
-      if (textExtensions.includes(ext || "")) {
-        changedFiles.add(file);
-      }
-    }
-
-    // Note: We don't handle removed files yet (would need to delete from R2)
-  }
-
-  return Array.from(changedFiles);
 }
 
 /**
@@ -1457,7 +1958,8 @@ async function syncChangedFiles(
   owner: string,
   repo: string,
   token: string,
-  changedFiles: string[]
+  changedFiles: string[],
+  removedFiles: string[] = []
 ): Promise<void> {
   const prefix = `brains/${installationUuid}/`;
 
@@ -1478,10 +1980,37 @@ async function syncChangedFiles(
     }
   }
 
+  // Delete removed files from R2
+  for (const filePath of removedFiles) {
+    await env.R2.delete(`${prefix}${filePath}`);
+    console.log(`Deleted: ${filePath}`);
+  }
+
   // Update last_sync_at
   await env.DB.prepare(
     "UPDATE installations SET last_sync_at = ? WHERE id = ?"
   ).bind(new Date().toISOString(), installationUuid).run();
+
+  // Regenerate brain summary after any file changes (keeps metadata in sync)
+  if (changedFiles.length > 0 || removedFiles.length > 0) {
+    try {
+      const allFiles: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const listed = await env.R2.list({ prefix, cursor });
+        for (const obj of listed.objects) {
+          const relative = obj.key.slice(prefix.length);
+          if (relative && relative !== "_brain_summary.json") {
+            allFiles.push(relative);
+          }
+        }
+        cursor = listed.truncated ? listed.cursor : undefined;
+      } while (cursor);
+      await generateBrainSummary(env, prefix, allFiles);
+    } catch (e) {
+      console.error("Failed to regenerate brain summary:", e);
+    }
+  }
 
   // Trigger AI Search re-indexing (non-blocking, best-effort)
   // The cooldown is 3 minutes, so rapid syncs may skip reindex
@@ -1519,6 +2048,11 @@ async function deleteInstallation(env: Env, installationUuid: string): Promise<{
     await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(inst.user_id).run();
   }
 
+  // Clean up email-related data for this installation
+  await env.DB.prepare("DELETE FROM email_aliases WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
+  await env.DB.prepare("DELETE FROM verified_senders WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
+  await env.DB.prepare("DELETE FROM email_log WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
+
   // Trigger AI Search reindex to drop stale vectors
   await triggerAISearchReindex(env);
 
@@ -1528,9 +2062,8 @@ async function deleteInstallation(env: Env, installationUuid: string): Promise<{
 
 /**
  * Sync a repository from GitHub to R2 (FULL sync)
- * Uses the Git Trees API to fetch the entire file tree in one call,
- * then downloads each file individually via the Blobs API.
- * This uses O(1 + files) subrequests instead of O(dirs + files).
+ * Downloads the entire repo as a tarball (1 subrequest) and extracts files.
+ * This avoids the Workers 50-subrequest limit that previously caused partial syncs.
  */
 async function syncRepo(
   env: Env,
@@ -1544,37 +2077,23 @@ async function syncRepo(
   const sensitiveFiles = [".env", ".env.local", ".env.production", ".mcp.json", "credentials.json", "secrets.json", ".npmrc", ".pypirc"];
   const skipDirs = ["node_modules", ".git", ".github", "dist", "build", "__pycache__"];
 
-  // Fetch entire file tree in a single API call
-  const tree = await fetchRepoTree(token, owner, repo);
-
-  // Filter to syncable files
-  const filesToSync = tree.filter(item => {
-    if (item.type !== "blob") return false;
-
-    // Skip files in excluded directories
-    const parts = item.path.split("/");
-    if (parts.some(p => skipDirs.includes(p))) return false;
-
-    // Skip sensitive files
-    const fileName = parts[parts.length - 1].toLowerCase();
-    if (sensitiveFiles.includes(fileName) || fileName.startsWith(".env.")) return false;
-
-    // Only sync text-based files
-    const ext = item.path.split(".").pop()?.toLowerCase();
-    return textExtensions.includes(ext || "");
+  // Download entire repo as tarball and extract matching files (1 external subrequest)
+  const files = await fetchRepoTarballFiles(token, owner, repo, {
+    textExtensions,
+    sensitiveFiles,
+    skipDirs,
   });
 
-  console.log(`Tree API returned ${tree.length} items, ${filesToSync.length} syncable files`);
+  console.log(`Tarball extracted ${files.length} syncable files`);
 
-  // Download and store each file
+  // Store each file in R2 (internal binding — no subrequest limit)
   const syncedFiles: string[] = [];
-  for (const file of filesToSync) {
+  for (const file of files) {
     try {
-      const content = await fetchBlobContent(token, file.url);
-      await env.R2.put(`${prefix}${file.path}`, content);
+      await env.R2.put(`${prefix}${file.path}`, file.content);
       syncedFiles.push(file.path);
     } catch (error) {
-      console.error(`Failed to sync ${file.path}:`, error);
+      console.error(`Failed to store ${file.path}:`, error);
     }
   }
 
@@ -2000,7 +2519,22 @@ async function handleOAuthCallback(request: Request, env: Env): Promise<Response
   const error = url.searchParams.get("error");
 
   if (error) {
-    return new Response(`OAuth error: ${error}`, { status: 400 });
+    return new Response(`<!DOCTYPE html>
+<html lang="en">
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authorization Cancelled - Brain Stem</title>
+  <style>${SITE_STYLES}</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Authorization Cancelled</h1>
+    <p>You cancelled the GitHub authorization. You'll need to authorize to get a bearer token for your AI client.</p>
+    <a href="/oauth/authorize" class="btn btn-primary">Try Again</a>
+  </div>
+</body>
+</html>`, { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 400 });
   }
 
   if (!code || !state) {
@@ -2130,7 +2664,7 @@ function renderOAuthSuccessPage(
 
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Authenticated! - Brainstem</title>
@@ -2146,6 +2680,9 @@ function renderOAuthSuccessPage(
 .warning-box { background: #fef3c7; border: 1px solid #fde68a; padding: 0.75rem 1rem; border-radius: 8px; margin: 1rem 0; font-size: 0.875rem; }
 .warning-box strong { color: #92400e; }
 .info-box { background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.75rem 1rem; border-radius: 8px; margin: 1rem 0; font-size: 0.875rem; color: #1e40af; }
+.bookmarklet-link { display: inline-block; padding: 10px 20px; background: #1a1a1a; color: white; border-radius: 8px; font-size: 0.9375rem; font-weight: 600; text-decoration: none; cursor: grab; transition: all 0.15s ease; }
+.bookmarklet-link:hover { background: #333; transform: translateY(-1px); }
+.bookmarklet-link:active { cursor: grabbing; }
   </style>
 </head>
 <body>
@@ -2156,7 +2693,7 @@ function renderOAuthSuccessPage(
     ${mcpUrl ? `
     <hr>
     <h2>Connect to Claude.ai</h2>
-    <p>In Claude.ai: Settings &rarr; Connectors &rarr; Add custom connector</p>
+    <p>In <a href="https://claude.ai/settings/connectors" target="_blank">Claude.ai Settings &rarr; Connectors</a> &rarr; Add custom connector</p>
 
     <div class="field-label">Remote server MCP url</div>
     <div class="copy-field">
@@ -2166,7 +2703,7 @@ function renderOAuthSuccessPage(
     <div class="info-box">OAuth Client ID and Client Secret are not needed &mdash; Claude.ai handles authentication automatically.</div>
     ` : `
     <hr>
-    <div class="warning-box"><strong>No installation found.</strong> <a href="/setup">Connect a repository</a> first, then return here to get your MCP URL.</div>
+    <div class="warning-box"><strong>No installation found.</strong> <a href="/">Connect a repository</a> first, then return here to get your MCP URL.</div>
     `}
 
     <hr>
@@ -2193,7 +2730,17 @@ function renderOAuthSuccessPage(
 }</code></pre>
     ` : ''}
 
-    <div class="warning-box"><strong>Copy these values now.</strong> They won't be shown again.</div>
+    ${mcpUrl ? `
+    <hr>
+    <h2>Web Clipper</h2>
+    <p>Save articles from any browser. <a href="/bookmarklet">Full setup instructions &rarr;</a></p>
+    <p style="margin-top: 0.75rem;">Drag this to your bookmarks bar:</p>
+    <p style="text-align: center; margin: 0.75rem 0;">
+      <a class="bookmarklet-link" href="${(() => { const js = bookmarkletTemplate.replace(/__TOKEN__/g, sessionId).replace(/__API__/g, env.WORKER_URL + '/api/clip').trim().replace(/;$/, ''); return 'javascript:void(' + encodeURIComponent(js) + ')'; })()}">Save to Brain</a>
+    </p>
+    ` : ''}
+
+    <div class="info-box">Need a new token? You can <a href="/oauth/authorize">re-authorize with GitHub</a> anytime.</div>
   </div>
   <script>
 function copyField(id, btn) {
@@ -2213,6 +2760,92 @@ function copyField(id, btn) {
       "Content-Type": "text/html; charset=utf-8",
       "Set-Cookie": clearCookie,
     },
+  });
+}
+
+function renderBookmarkletPage(
+  env: Env,
+  sessionId: string,
+  installationUuid: string | null
+): Response {
+  const bookmarkletJs = bookmarkletTemplate.replace(/__TOKEN__/g, sessionId).replace(/__API__/g, `${env.WORKER_URL}/api/clip`).trim().replace(/;$/, '');
+  const bookmarkletHref = `javascript:void(${encodeURIComponent(bookmarkletJs)})`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Clipper - Brainstem</title>
+  <style>${SITE_STYLES}
+.bookmarklet-link { display: inline-block; padding: 12px 24px; background: #1a1a1a; color: white; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; cursor: grab; transition: all 0.15s ease; }
+.bookmarklet-link:hover { background: #333; transform: translateY(-1px); }
+.bookmarklet-link:active { cursor: grabbing; }
+.instructions { background: #f4f4f5; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+.instructions ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+.instructions li { margin: 0.4rem 0; line-height: 1.5; }
+.shortcut-section { margin-top: 2rem; }
+.shortcut-section h3 { margin-bottom: 0.5rem; }
+.code-block { background: #f4f4f5; border: 1px solid #d4d4d8; border-radius: 8px; padding: 1rem; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8125rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Web Clipper</h1>
+    <p>Save articles and web pages to your brain inbox from any browser.</p>
+
+    ${installationUuid ? `
+    <hr>
+    <h2>Bookmarklet</h2>
+    <div class="instructions">
+      <p><strong>Drag this link to your bookmarks bar:</strong></p>
+      <p style="margin-top: 0.75rem; text-align: center;">
+        <a class="bookmarklet-link" href="${bookmarkletHref}">Save to Brain</a>
+      </p>
+      <ol>
+        <li>Drag the button above to your browser's bookmarks bar</li>
+        <li>Navigate to any article or web page</li>
+        <li>Click "Save to Brain" in your bookmarks bar</li>
+        <li>Optionally add a context note when prompted</li>
+        <li>The article will be extracted and saved to your brain inbox</li>
+      </ol>
+    </div>
+
+    <div class="shortcut-section">
+      <h3>iOS Shortcut</h3>
+      <p>Save links from any iOS app via the Share Sheet:</p>
+      <div class="instructions">
+        <ol>
+          <li>Open the <strong>Shortcuts</strong> app on your iPhone/iPad</li>
+          <li>Create a new shortcut with a <strong>Share Sheet</strong> trigger (accepts URLs)</li>
+          <li>Add a <strong>"Get Name"</strong> action (extracts page title)</li>
+          <li>Add an <strong>"Ask for Input"</strong> action with prompt: "Add a note (optional)"</li>
+          <li>Add a <strong>"Get Contents of URL"</strong> action:</li>
+        </ol>
+        <div class="code-block">Method: POST
+URL: ${escapeHtml(env.WORKER_URL)}/api/clip
+Headers:
+  Authorization: Bearer ${escapeHtml(sessionId)}
+  Content-Type: application/json
+Body (JSON):
+  url: [Share Sheet Input]
+  title: [Name]
+  context: [Ask for Input result]</div>
+        <ol start="6">
+          <li>Add a <strong>"Show Notification"</strong> action: "Saved to brain!"</li>
+        </ol>
+      </div>
+    </div>
+    ` : `
+    <hr>
+    <div class="warning-box"><strong>No installation found.</strong> <a href="/setup">Connect a repository</a> first.</div>
+    `}
+  </div>
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 }
 
@@ -2383,6 +3016,11 @@ export default {
       return handleHomepage(env);
     }
 
+    // Handle /privacy - Privacy policy
+    if (url.pathname === "/privacy") {
+      return handlePrivacyPolicy();
+    }
+
     // Handle /setup - landing page (redirects to homepage)
     if (url.pathname === "/setup") {
       return handleSetup(env);
@@ -2416,6 +3054,48 @@ export default {
     // Handle /oauth/token - Token endpoint
     if (url.pathname === "/oauth/token") {
       return handleOAuthToken(request, env);
+    }
+
+    // Handle /api/clip - Web clipping endpoint (bookmarklet / iOS Shortcut)
+    if (url.pathname === "/api/clip") {
+      if (request.method === "OPTIONS") {
+        const { corsHeaders } = await import("./clip");
+        return new Response(null, { status: 204, headers: corsHeaders() });
+      }
+      if (request.method === "POST") {
+        const { handleClip, addCorsHeaders, corsHeaders } = await import("./clip");
+        try {
+          const auth = await authenticateRequest(request, env);
+          if (auth instanceof Response) return addCorsHeaders(auth);
+          // Resolve user's installation
+          const installation = await env.DB.prepare(
+            "SELECT id FROM installations WHERE user_id = ? LIMIT 1"
+          ).bind(auth.userId).first<{ id: string }>();
+          if (!installation) {
+            return addCorsHeaders(new Response(JSON.stringify({ ok: false, error: "No installation found. Visit /setup first." }), {
+              status: 404, headers: { "Content-Type": "application/json" },
+            }));
+          }
+          return addCorsHeaders(await handleClip(request, env, installation.id));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Internal server error";
+          return new Response(JSON.stringify({ ok: false, error: message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", ...corsHeaders() },
+          });
+        }
+      }
+    }
+
+    // Handle /bookmarklet - Bookmarklet delivery page (authenticated)
+    if (url.pathname === "/bookmarklet" && request.method === "GET") {
+      const auth = await authenticateRequest(request, env);
+      if (auth instanceof Response) return auth;
+      const installation = await env.DB.prepare(
+        "SELECT id FROM installations WHERE user_id = ? LIMIT 1"
+      ).bind(auth.userId).first<{ id: string }>();
+      const sessionId = request.headers.get("Authorization")?.slice(7) || "";
+      return renderBookmarkletPage(env, sessionId, installation?.id || null);
     }
 
     // All /debug/* endpoints require authentication
@@ -2494,20 +3174,34 @@ export default {
 
     // /doc/* endpoint removed (ADR-002 Phase 0) — use get_document MCP tool instead
 
-    // /mcp and /mcp/message SSE transport
+    // /mcp Streamable HTTP transport (POST, GET, DELETE)
     // With installation query param (set by handleUserMcp): full MCP with all tools
     // Without installation param (bare /mcp): generic MCP with about-only tool
-    if (url.pathname === "/mcp/message" || (url.pathname === "/mcp" && request.method === "POST")) {
+    if (url.pathname === "/mcp" && (request.method === "POST" || request.method === "GET" || request.method === "DELETE" || request.method === "OPTIONS")) {
+      // GET without mcp-session-id header is not a Streamable HTTP request — return 404
+      if (request.method === "GET" && !request.headers.get("mcp-session-id")) {
+        return new Response(JSON.stringify({
+          error: "Not found",
+          message: "Use /mcp/{uuid} with a bearer token. Visit /setup to get started.",
+        }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
       return mcpHandler.fetch(request, env, ctx);
     }
-    // GET /mcp without UUID — return 404 (not an MCP endpoint)
-    if (url.pathname === "/mcp" && request.method === "GET") {
-      return new Response(JSON.stringify({
-        error: "Not found",
-        message: "Use /mcp/{uuid} with a bearer token. Visit /setup to get started.",
-      }), { status: 404, headers: { "Content-Type": "application/json" } });
+    // Legacy /mcp/message path (SSE transport) — forward to handler for backward compatibility
+    if (url.pathname === "/mcp/message" && request.method === "POST") {
+      return mcpHandler.fetch(request, env, ctx);
     }
 
     return new Response("Not found", { status: 404 });
+  },
+
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    try {
+      const { handleInboundEmail } = await import("./email");
+      await handleInboundEmail(message, env);
+    } catch (error) {
+      // Never throw from email handler — log and silently drop
+      console.error("Email handler error:", error);
+    }
   },
 };

@@ -7,6 +7,7 @@ status: under-review
 position: senior-author
 theme: pediatric-outcomes
 journal: Journal of Emergency Medicine
+blocked: true
 permalink: research/hypothermic-infants-in-the-emergency-department
 ---
 
