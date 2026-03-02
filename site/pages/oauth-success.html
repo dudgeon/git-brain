@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authenticated! - Brain Stem</title>
+  <style>
+{{STYLES}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="success">Authenticated!</h1>
+    <p>Welcome, <strong>{{GITHUB_LOGIN}}</strong>. You're now authenticated with Brain Stem.</p>
+
+    <hr>
+
+    <h2>Your bearer token</h2>
+    <div class="highlight">{{SESSION_TOKEN}}</div>
+    <div class="highlight-warning">
+      <strong>Copy this token now.</strong> It won't be shown again.<br>
+      Expires: {{EXPIRES_AT}}
+    </div>
+
+    <hr>
+
+    <h2>Configuration</h2>
+    <p>Add to your MCP config:</p>
+    <pre><code>{
+  "mcpServers": {
+    "my-brain": {
+      "url": "{{WORKER_URL}}/mcp/{installation-uuid}",
+      "headers": {
+        "Authorization": "Bearer {{SESSION_TOKEN}}"
+      }
+    }
+  }
+}</code></pre>
+    <p class="muted">Replace <code>{installation-uuid}</code> with your installation ID.</p>
+
+    <hr>
+
+    <h2>Next steps</h2>
+    <ol>
+      <li>Copy your bearer token above</li>
+      <li>Find your installation ID at <a href="/setup">/setup</a> if you don't have it</li>
+      <li>Update your MCP configuration with both values</li>
+      <li>Restart your AI client to connect</li>
+    </ol>
+
+    <div class="footer">
+      <p>Need your installation ID? Visit the <a href="/setup">setup page</a>.</p>
+    </div>
+  </div>
+</body>
+</html>

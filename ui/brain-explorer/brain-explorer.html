@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brain Explorer</title>
+</head>
+<body>
+  <main class="explorer">
+    <!-- Toolbar -->
+    <div id="toolbar" class="toolbar">
+      <div class="toolbar-left">
+        <button id="back-btn" class="toolbar-btn" style="display:none" aria-label="Back">&larr;</button>
+        <span id="breadcrumb" class="breadcrumb"></span>
+      </div>
+      <div class="toolbar-right">
+        <button id="browse-btn" class="toolbar-btn">Browse</button>
+        <button id="fullscreen-btn" class="toolbar-btn" style="display:none" aria-label="Fullscreen">&#x26F6;</button>
+      </div>
+    </div>
+
+    <!-- Search results -->
+    <div id="results" class="panel">
+      <div id="results-header" class="panel-header"></div>
+      <div id="results-list" class="results-list"></div>
+    </div>
+
+    <!-- Folder browser -->
+    <div id="folders" class="panel" style="display:none">
+      <div id="folders-list" class="folders-list"></div>
+    </div>
+
+    <!-- Document viewer -->
+    <div id="viewer" class="panel" style="display:none">
+      <div id="viewer-meta" class="viewer-meta"></div>
+      <div id="viewer-content" class="viewer-content preview-content"></div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div id="loading" class="loading" style="display:none">
+      <span class="loading-spinner"></span>
+      <span id="loading-text">Loading...</span>
+    </div>
+  </main>
+  <script type="module" src="/src/app.ts"></script>
+</body>
+</html>

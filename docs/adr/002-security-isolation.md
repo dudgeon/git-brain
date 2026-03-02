@@ -7,7 +7,7 @@
 
 ## Context
 
-ADR-001 chose Level 1 (logical isolation) for the MVP, deferring `ScopedR2`, `ScopedAISearch`, and search filtering as "single-user MVP" items. The system now has one real user (the maintainer) and the inbox write tool has exposed how fragile the current model is. Before onboarding additional users, we need to address the security gaps documented below.
+ADR-001 chose Level 1 (logical isolation) for the MVP, deferring `ScopedR2`, `ScopedAISearch`, and search filtering as "single-user MVP" items. The system now has one real user (the maintainer) and the brain_inbox write tool has exposed how fragile the current model is. Before onboarding additional users, we need to address the security gaps documented below.
 
 ## Current State (as of 2026-01-29)
 
@@ -15,8 +15,8 @@ ADR-001 chose Level 1 (logical isolation) for the MVP, deferring `ScopedR2`, `Sc
 - GitHub App webhook sync (push → R2 + reindex)
 - Per-installation MCP endpoints (`/mcp/{uuid}`) with auth on `brainstem.cc`
 - OAuth flow producing bearer tokens with 30-day expiry
-- 6 MCP tools (about, search_brain, get_document, list_recent, list_folders, inbox)
-- Inbox tool writes to both R2 and GitHub repo
+- 6 MCP tools (about, search_brain, get_document, list_recent, list_folders, brain_inbox)
+- brain_inbox tool writes to both R2 and GitHub repo
 
 ### What's broken or insecure
 
@@ -48,7 +48,7 @@ One AI Search instance (`home-brain-search`) indexes the entire R2 bucket. The `
 | `/doc/{path}` | Direct file access from R2, no auth |
 
 #### 6. Inbox tool — GitHub write requires per-user context
-The inbox tool only writes to GitHub when `repoFullName` and `r2Prefix` are set, which requires connecting via `/mcp/{uuid}` (not legacy `/mcp`). Users on the legacy endpoint get R2-only writes with no error surfaced.
+The brain_inbox tool only writes to GitHub when `repoFullName` and `r2Prefix` are set, which requires connecting via `/mcp/{uuid}` (not legacy `/mcp`). Users on the legacy endpoint get R2-only writes with no error surfaced.
 
 ## Threat Model
 
@@ -59,7 +59,7 @@ The inbox tool only writes to GitHub when `repoFullName` and `r2Prefix` are set,
 | **Debug abuse** — trigger syncs, read logs without auth | Vulnerable (all debug endpoints open) | High |
 | **UUID enumeration** — guess installation IDs | Mitigated (UUIDs are random), but no auth on workers.dev | Medium |
 | **Path traversal** — `../` to escape R2 prefix | Mitigated (R2 prefix is prepended, `../` doesn't traverse R2 keys) | Low |
-| **Write abuse** — inbox tool creates files in wrong repo | Mitigated (GitHub write requires valid installation token) | Low |
+| **Write abuse** — brain_inbox tool creates files in wrong repo | Mitigated (GitHub write requires valid installation token) | Low |
 
 ## Decision
 
@@ -80,7 +80,7 @@ Require authentication, scope to the user's installation prefix.
 ### 0c. Remove legacy `/mcp` endpoint
 Stop serving the unscoped, unauthenticated legacy endpoint. All MCP connections must use `/mcp/{uuid}`. Update CLAUDE.md and any client configs.
 
-### 0d. Remove diagnostic messages from inbox tool
+### 0d. Remove diagnostic messages from brain_inbox tool
 The `(synced to GitHub)` / `(skipped GitHub ...)` diagnostic text in the inbox response was added for debugging. Remove it once the GitHub write is confirmed working — tool responses should be clean for end users.
 
 ## Phase 1: Auth Everywhere
@@ -193,7 +193,7 @@ class ScopedAISearch {
 - [x] Auth-gate `/debug/*` endpoints — bearer token + ownership checks
 - [x] Remove `/doc/{path}` endpoint entirely
 - [x] Remove legacy `/mcp` endpoint (catch-all → 404)
-- [x] Clean up inbox tool diagnostic messages (simplified response text)
+- [x] Clean up brain_inbox tool diagnostic messages (simplified response text)
 
 ### Phase 1 (Auth Everywhere) — Done (2026-01-29)
 - [x] Require auth on all domains — `workers_dev = false`, `requireAuth = true` always
@@ -219,7 +219,7 @@ class ScopedAISearch {
 After each phase, run:
 1. **Cross-tenant test** — create two installations, verify no data leakage via search, get_document, list_folders
 2. **Auth test** — verify unauthenticated requests are rejected on all endpoints
-3. **Inbox e2e test** — verify R2 write + GitHub write both succeed from authenticated `/mcp/{uuid}` endpoint
+3. **brain_inbox e2e test** — verify R2 write + GitHub write both succeed from authenticated `/mcp/{uuid}` endpoint
 
 ## References
 
