@@ -13,7 +13,7 @@ permalink: research/ct-turnaround
 
 # CT Turnaround Times
 
-**Status:** Under Review
+**Status:** Accepted
 **Position:** Middle author
 **Theme:** Informatics & QI
 
@@ -26,7 +26,7 @@ permalink: research/ct-turnaround
 | Journal | Emergency Radiology |
 | MS# | EMID:3e8ab9feeae485f5 |
 | Submitted | Jan 27, 2026 |
-| Decision | Pending |
+| Decision | Accepted (Feb 2026) |
 | Previous Journal | JACR (JACRAD-D-25-00850) |
 
 ---
@@ -45,7 +45,7 @@ permalink: research/ct-turnaround
 
 ## Activity Log
 
-- **2026-02-27:** CT Turnaround Times Study - officially accepted at Emergency Radiology. Obert Xu handling any remaining minor items. Counts as accepted for promotion purposes. Status: accepted/under-review.
+- **2026-02-27:** CT Turnaround Times Study - officially accepted at Emergency Radiology. Obert Xu handling any remaining minor items. Counts as accepted for promotion purposes. Status: accepted.
 - **2026-02-19:** CT Turnaround Times Study - Accepted with minor revisions at Emergency Radiology. Obert Xu handling revisions. Counts as accepted for promotion purposes. Status: accepted.
 - **2026-02-19:** CT Turnaround Times Study - status change to accepted. Accepted at Emergency Radiology with minor revisions. Obert handling final submission. Counts as accepted for promotion.
 - **2026-02-19:** CT TAT / Breaking the Bottleneck paper - ACCEPTED with minor revisions at Emergency Radiology. Obert Xu will handle submitting the revised manuscript and will notify when truly published. For promotion purposes, this counts as accepted.
