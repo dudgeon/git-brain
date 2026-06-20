@@ -211,9 +211,10 @@ All MCP connections require a bearer token from OAuth. Transport is Streamable H
 ### API Endpoints (require bearer token)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/clip` | POST | Web clipping endpoint (bookmarklet / iOS Shortcut → inbox) |
+| `/api/clip` | POST | Web clipping endpoint (bookmarklet / iOS Shortcut → inbox). Routes to the user's default brain; override with `?brain={uuid}` or `installation`/`brain` in the body |
 | `/api/clip` | OPTIONS | CORS preflight for cross-origin bookmarklet requests |
-| `/bookmarklet` | GET | Bookmarklet delivery page with drag-to-install link |
+| `/api/default-brain` | POST | Set the user's default brain for web clips (`{ brainId }`) (ADR-011) |
+| `/bookmarklet` | GET | Bookmarklet delivery page (per-brain links when multiple brains) |
 
 ### OAuth & Discovery Endpoints
 | Endpoint | Method | Description |
@@ -407,18 +408,26 @@ Connected!
 ## Database Schema
 
 ### `installations` table
+
+One row per **brain** (= one repo). A GitHub installation can back several rows (ADR-011). The row `id` is the brain UUID used everywhere (R2 prefix, MCP URL, AI Search filter).
+
 ```sql
 CREATE TABLE installations (
-  id TEXT PRIMARY KEY,              -- UUID v4
-  github_installation_id INTEGER,   -- GitHub's installation ID
+  id TEXT PRIMARY KEY,              -- UUID v4 (the brain UUID)
+  github_installation_id INTEGER,   -- GitHub's installation ID (shared across a user's repos)
   account_login TEXT,               -- GitHub username or org
   account_type TEXT,                -- 'User' or 'Organization'
   repo_full_name TEXT,              -- e.g., 'dudgeon/home-brain'
   created_at TEXT,
   last_sync_at TEXT,
-  user_id TEXT                      -- FK to users table (set on first OAuth)
+  user_id TEXT,                     -- FK to users table (set on first OAuth)
+  is_default_for_user INTEGER DEFAULT 0  -- user's default write target for clip/bookmarklet (ADR-011)
 );
+-- Multi-repo: one brain per (installation, repo)
+CREATE UNIQUE INDEX idx_install_repo ON installations(github_installation_id, repo_full_name);
 ```
+
+Schema additions (`is_default_for_user`, `idx_install_repo`) are applied lazily by `ensureMultiRepoSchema()`.
 
 ### `users` table
 ```sql
@@ -523,36 +532,47 @@ CREATE TABLE email_log (
 
 ## Customer Lifecycle
 
+### Multi-Repo Model (ADR-011)
+
+**One repo = one brain.** Each connected repository is its own brain: a distinct `installations` row (the row `id` is the brain UUID), its own R2 prefix `brains/{uuid}/`, its own `/mcp/{uuid}` endpoint, AI Search filter scope, and email sub-address. A single GitHub App installation can back **multiple** brains (one per accessible repo), so brain rows share a `github_installation_id` but differ by `repo_full_name` (unique index `idx_install_repo`).
+
+The `is_default_for_user` column marks the user's default write target for web clips / the bookmarklet (Q3). Helpers: `getBrainForPush`, `getBrainsForInstallation`, `getBrainsForUser`, `getDefaultBrainForUser`, `setDefaultBrainForUser`, `ensureUserHasDefault`. Schema is applied lazily via `ensureMultiRepoSchema` (mirrors `ensureOAuthTables`).
+
 ### New Installation (Onboarding)
 
-1. User visits `/setup` → installs the GitHub App on their repo
+1. User visits `/setup` → installs the GitHub App, granting access to one or more repos
 2. GitHub redirects to `/setup/callback` with `installation_id`
-3. Callback creates D1 installation record, then triggers background sync via `ctx.waitUntil()`
+3. Callback lists **all** accessible repos and creates a brain per repo (`createBrainForRepo`, idempotent), each with a background sync via `ctx.waitUntil()`
 4. Background sync: `syncRepo` downloads the entire repo as a gzip tarball (1 subrequest), filters and extracts text files in-memory, writes to R2 at `brains/{uuid}/`, generates `_brain_summary.json`, triggers AI Search reindex
-5. User authenticates via OAuth → session created → MCP tools available
+5. Success page lists every brain + its MCP URL
+6. User authenticates via OAuth → session created → MCP tools available; first brain auto-set as default
 
-**Key functions:** `handleSetupCallback` → `syncRepo` → `fetchRepoTarballFiles` → `generateBrainSummary` → `triggerAISearchReindex`
+**Key functions:** `handleSetupCallback` → `createBrainForRepo` → `syncRepo` → `fetchRepoTarballFiles` → `generateBrainSummary` → `triggerAISearchReindex`
 
 ### Incremental Sync (Ongoing)
 
 1. User pushes to GitHub → webhook fires to `/webhook/github`
-2. `extractChangedFiles` parses push payload for added/modified files
-3. `syncChangedFiles` fetches each changed file via GitHub Contents API, writes to R2
-4. AI Search reindex triggered automatically
+2. Push is routed to the correct brain via `getBrainForPush(installation_id, payload.repository.full_name)`
+3. `extractChangedFiles` parses push payload for added/modified files
+4. `syncChangedFiles` fetches each changed file via GitHub Contents API, writes to R2
+5. AI Search reindex triggered automatically
+
+**Repo add/remove:** the `installation_repositories` webhook is handled (`handleInstallationRepositories`) — added repos create brains + sync; removed repos delete their brain. (Requires the App to be subscribed to the `installation_repositories` event.)
 
 **Note:** Deleted files are synced — `extractChangedFiles` returns both changed and removed files. `syncChangedFiles` deletes removed files from R2 and regenerates the brain summary.
 
 ### Account Deletion (Offboarding)
 
 Triggered by either:
-- **GitHub App uninstall** → `installation.deleted` webhook → `/webhook/github`
-- **Manual** → `POST /debug/delete/{uuid}` (auth-gated, owner-only)
+- **GitHub App uninstall** → `installation.deleted` webhook → `/webhook/github` (deletes **every** brain backed by that installation)
+- **Repo removed from install** → `installation_repositories` webhook (deletes just that repo's brain)
+- **Manual** → `POST /debug/delete/{uuid}` (auth-gated, owner-only; single brain)
 
-Both call `deleteInstallation(env, installationUuid)` which:
+All call `deleteInstallation(env, installationUuid, { reindex? })` which:
 1. Paginated R2 list + bulk delete of all objects under `brains/{uuid}/`
-2. Deletes the D1 installation record
-3. Revokes all sessions for the owning user
-4. Triggers AI Search reindex to remove stale vectors
+2. Deletes the D1 installation record + email data for that brain
+3. Revokes the owning user's sessions **only if this was their last brain**; otherwise promotes a new default if the deleted brain was the default
+4. Triggers AI Search reindex to remove stale vectors (skipped during batch deletes, then run once)
 
 **E2E test procedure:**
 1. Note the installation UUID and file count via `/debug/status/{uuid}`

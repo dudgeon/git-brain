@@ -16,7 +16,7 @@ import {
   verifyWebhookSignature,
   type GitHubEnv,
 } from "./github";
-import { extractChangedFiles, sanitizeInboxTitle, validateAlias, generateConfirmationCode } from "./utils";
+import { extractChangedFiles, sanitizeInboxTitle, validateAlias, generateConfirmationCode, parseRepositoryChanges } from "./utils";
 import { triggerAISearchReindex } from "./cloudflare";
 import { saveToInbox, ensureEmailTables } from "./inbox";
 import logoPng from "../site/brainstem_logo.png";
@@ -917,7 +917,7 @@ Forward emails to your brainstem address to save them as inbox notes. Use the br
 
     if (existingVanity) {
       return {
-        content: [{ type: "text" as const, text: `You already have a vanity alias: ${existingVanity.alias}@brainstem.cc. Only one vanity alias per installation is allowed.` }],
+        content: [{ type: "text" as const, text: `You already have a vanity alias: ${existingVanity.alias}@brainstem.cc. Only one vanity alias per brain is allowed.` }],
         isError: true,
       };
     }
@@ -1189,6 +1189,122 @@ async function ensureOAuthTables(env: Env): Promise<void> {
   `).run();
 }
 
+// Memoized for the lifetime of the isolate — the migration is idempotent but
+// we don't want a PRAGMA + ALTER round-trip on every request.
+let multiRepoSchemaReady = false;
+
+/**
+ * Multi-repo support (ADR-011): allow many brains per GitHub installation.
+ * Adds the `is_default_for_user` column (user's default write target for
+ * clip/bookmarklet) and a unique index on (github_installation_id, repo_full_name).
+ *
+ * Core tables are provisioned out-of-band (see docs/SELF-HOSTING.md); this mirrors
+ * the lazy "ensure" pattern used for OAuth/email tables. SQLite has no
+ * `ADD COLUMN IF NOT EXISTS`, so we guard with PRAGMA table_info.
+ */
+async function ensureMultiRepoSchema(env: Env): Promise<void> {
+  if (multiRepoSchemaReady) return;
+  try {
+    const cols = await env.DB.prepare("PRAGMA table_info(installations)").all<{ name: string }>();
+    const hasDefault = (cols.results ?? []).some((c) => c.name === "is_default_for_user");
+    if (!hasDefault) {
+      await env.DB.prepare(
+        "ALTER TABLE installations ADD COLUMN is_default_for_user INTEGER DEFAULT 0"
+      ).run();
+    }
+    multiRepoSchemaReady = true;
+  } catch (e) {
+    console.error("ensureMultiRepoSchema (column) failed:", e);
+    return; // retry on next call
+  }
+  // Index is a performance/uniqueness optimization — failure must not block boot.
+  try {
+    await env.DB.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_install_repo ON installations(github_installation_id, repo_full_name)"
+    ).run();
+  } catch (e) {
+    console.error("ensureMultiRepoSchema (index) failed:", e);
+  }
+}
+
+/**
+ * Resolve the single brain for a push: keyed on (installation, repo).
+ */
+async function getBrainForPush(
+  env: Env,
+  githubInstallationId: number,
+  repoFullName: string
+): Promise<Installation | null> {
+  return await env.DB.prepare(
+    "SELECT * FROM installations WHERE github_installation_id = ? AND repo_full_name = ?"
+  ).bind(githubInstallationId, repoFullName).first<Installation>();
+}
+
+/** All brains backed by a single GitHub installation (uninstall, repo-removed). */
+async function getBrainsForInstallation(
+  env: Env,
+  githubInstallationId: number
+): Promise<Installation[]> {
+  const res = await env.DB.prepare(
+    "SELECT * FROM installations WHERE github_installation_id = ?"
+  ).bind(githubInstallationId).all<Installation>();
+  return res.results ?? [];
+}
+
+/** All of a user's brains — default first, then oldest-first. */
+async function getBrainsForUser(env: Env, userId: string): Promise<Installation[]> {
+  const res = await env.DB.prepare(
+    "SELECT * FROM installations WHERE user_id = ? ORDER BY is_default_for_user DESC, created_at ASC"
+  ).bind(userId).all<Installation>();
+  return res.results ?? [];
+}
+
+/**
+ * The user's default write target (clip/bookmarklet). Prefers the explicit
+ * `is_default_for_user` flag; falls back to the earliest-created brain so there
+ * is always a sensible target even before a default has been set.
+ */
+async function getDefaultBrainForUser(env: Env, userId: string): Promise<Installation | null> {
+  const explicit = await env.DB.prepare(
+    "SELECT * FROM installations WHERE user_id = ? AND is_default_for_user = 1 LIMIT 1"
+  ).bind(userId).first<Installation>();
+  if (explicit) return explicit;
+  return await env.DB.prepare(
+    "SELECT * FROM installations WHERE user_id = ? ORDER BY created_at ASC LIMIT 1"
+  ).bind(userId).first<Installation>();
+}
+
+/** Flip the default brain for a user (single-default invariant enforced here). */
+async function setDefaultBrainForUser(env: Env, userId: string, brainId: string): Promise<boolean> {
+  const owns = await env.DB.prepare(
+    "SELECT id FROM installations WHERE id = ? AND user_id = ?"
+  ).bind(brainId, userId).first<{ id: string }>();
+  if (!owns) return false;
+  await env.DB.prepare(
+    "UPDATE installations SET is_default_for_user = 0 WHERE user_id = ?"
+  ).bind(userId).run();
+  await env.DB.prepare(
+    "UPDATE installations SET is_default_for_user = 1 WHERE id = ?"
+  ).bind(brainId).run();
+  return true;
+}
+
+/** Ensure a user has exactly one default brain (promotes the earliest if none). */
+async function ensureUserHasDefault(env: Env, userId: string): Promise<void> {
+  const hasDefault = await env.DB.prepare(
+    "SELECT id FROM installations WHERE user_id = ? AND is_default_for_user = 1 LIMIT 1"
+  ).bind(userId).first<{ id: string }>();
+  if (hasDefault) return;
+  const earliest = await env.DB.prepare(
+    "SELECT id FROM installations WHERE user_id = ? ORDER BY created_at ASC LIMIT 1"
+  ).bind(userId).first<{ id: string }>();
+  if (earliest) {
+    await env.DB.prepare(
+      "UPDATE installations SET is_default_for_user = 1 WHERE id = ?"
+    ).bind(earliest.id).run();
+  }
+}
+
 /**
  * Handle /.well-known/oauth-protected-resource (RFC 9728)
  */
@@ -1299,6 +1415,7 @@ interface Installation {
   created_at: string;
   last_sync_at: string | null;
   user_id: string | null;
+  is_default_for_user?: number;
 }
 
 // Webhook log entry type
@@ -1536,6 +1653,118 @@ function handleSetup(env: Env): Response {
 /**
  * Handle /setup/callback - GitHub App installation callback
  */
+/**
+ * Create a brain (installations row) for one repo and kick off initial sync.
+ * Idempotent on (github_installation_id, repo_full_name): returns the existing
+ * brain id if one already exists. Shared by setup and installation_repositories.
+ */
+async function createBrainForRepo(
+  env: Env,
+  ctx: ExecutionContext,
+  githubInstallationId: number,
+  repo: { full_name: string; owner: { login: string; type: string } }
+): Promise<{ id: string; created: boolean }> {
+  const existing = await getBrainForPush(env, githubInstallationId, repo.full_name);
+  if (existing) return { id: existing.id, created: false };
+
+  const uuid = crypto.randomUUID();
+  try {
+    await env.DB.prepare(`
+      INSERT INTO installations (id, github_installation_id, account_login, account_type, repo_full_name, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      uuid,
+      githubInstallationId,
+      repo.owner.login,
+      repo.owner.type,
+      repo.full_name,
+      new Date().toISOString()
+    ).run();
+  } catch (e) {
+    // Likely a unique-index race (idx_install_repo) — reuse the existing brain.
+    const raced = await getBrainForPush(env, githubInstallationId, repo.full_name);
+    if (raced) return { id: raced.id, created: false };
+    throw e;
+  }
+
+  const [owner, repoName] = repo.full_name.split("/");
+  ctx.waitUntil((async () => {
+    try {
+      const token = await getInstallationToken(env, githubInstallationId);
+      await syncRepo(env, uuid, owner, repoName, token);
+      await triggerAISearchReindex(env);
+      console.log(`Initial sync complete for ${repo.full_name} (brain ${uuid})`);
+    } catch (error) {
+      console.error(`Initial sync failed for ${repo.full_name}:`, error);
+    }
+  })());
+
+  return { id: uuid, created: true };
+}
+
+/**
+ * Handle the installation_repositories webhook (ADR-011): repos added to or
+ * removed from an existing installation. Added → create brain + sync; removed →
+ * delete the matching brain. Returns a short summary for the webhook log.
+ */
+async function handleInstallationRepositories(
+  env: Env,
+  ctx: ExecutionContext,
+  githubInstallationId: number,
+  payload: {
+    repositories_added?: Array<{ full_name: string }>;
+    repositories_removed?: Array<{ full_name: string }>;
+  }
+): Promise<string> {
+  await ensureMultiRepoSchema(env);
+
+  const { added, removed } = parseRepositoryChanges(payload);
+
+  // Removed repos: delete the matching brain.
+  let removedCount = 0;
+  for (const fullName of removed) {
+    const brain = await getBrainForPush(env, githubInstallationId, fullName);
+    if (brain) {
+      try {
+        await deleteInstallation(env, brain.id, { reindex: false });
+        removedCount++;
+      } catch (e) {
+        console.error(`Failed to remove brain for ${fullName}:`, e);
+      }
+    }
+  }
+  if (removedCount > 0) {
+    await triggerAISearchReindex(env).catch(() => {});
+  }
+
+  // Added repos: webhook entries lack an owner object, so derive owner
+  // login/type (consistent per installation) from an existing brain row.
+  let addedCount = 0;
+  if (added.length > 0) {
+    const sample = await env.DB.prepare(
+      "SELECT account_login, account_type, user_id FROM installations WHERE github_installation_id = ? LIMIT 1"
+    ).bind(githubInstallationId).first<{ account_login: string; account_type: string; user_id: string | null }>();
+
+    for (const fullName of added) {
+      const owner = {
+        login: sample?.account_login ?? fullName.split("/")[0],
+        type: sample?.account_type ?? "User",
+      };
+      const result = await createBrainForRepo(env, ctx, githubInstallationId, { full_name: fullName, owner });
+      if (result.created) {
+        addedCount++;
+        // Link to the owning user if known (otherwise linked lazily on OAuth/MCP access).
+        if (sample?.user_id) {
+          await env.DB.prepare("UPDATE installations SET user_id = ? WHERE id = ?")
+            .bind(sample.user_id, result.id).run();
+        }
+      }
+    }
+  }
+
+  return `added ${addedCount}, removed ${removedCount}`;
+}
+
 async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const installationIdParam = url.searchParams.get("installation_id");
@@ -1571,18 +1800,9 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
   }
 
   try {
-    // Check if this installation already exists
-    const existing = await env.DB.prepare(
-      "SELECT id FROM installations WHERE github_installation_id = ?"
-    ).bind(githubInstallationId).first<{ id: string }>();
+    await ensureMultiRepoSchema(env);
 
-    if (existing) {
-      // Installation already exists, show existing endpoint
-      const mcpUrl = `${env.WORKER_URL}/mcp/${existing.id}`;
-      return renderSuccessPage(mcpUrl, "Already Connected");
-    }
-
-    // Get installation token to fetch repos
+    // Get installation token to fetch ALL accessible repos (ADR-011: one brain per repo)
     const token = await getInstallationToken(env, githubInstallationId);
     const repos = await getInstallationRepos(token);
 
@@ -1606,41 +1826,14 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
 </html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
-    // For MVP, use the first repo
-    const repo = repos[0];
+    // Create (or reuse) a brain per repo and kick off initial sync for each.
+    const brains: Array<{ id: string; repo: string; created: boolean }> = [];
+    for (const repo of repos) {
+      const result = await createBrainForRepo(env, ctx, githubInstallationId, repo);
+      brains.push({ id: result.id, repo: repo.full_name, created: result.created });
+    }
 
-    // Generate UUID for this installation
-    const uuid = crypto.randomUUID();
-
-    // Store in D1
-    await env.DB.prepare(`
-      INSERT INTO installations (id, github_installation_id, account_login, account_type, repo_full_name, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(
-      uuid,
-      githubInstallationId,
-      repo.owner.login,
-      repo.owner.type,
-      repo.full_name,
-      new Date().toISOString()
-    ).run();
-
-    // Trigger initial sync in background (don't block setup response)
-    const [owner, repoName] = repo.full_name.split("/");
-    ctx.waitUntil((async () => {
-      try {
-        const token = await getInstallationToken(env, githubInstallationId);
-        await syncRepo(env, uuid, owner, repoName, token);
-        await triggerAISearchReindex(env);
-        console.log(`Initial sync complete for ${repo.full_name}`);
-      } catch (error) {
-        console.error(`Initial sync failed for ${repo.full_name}:`, error);
-      }
-    })());
-
-    const mcpUrl = `${env.WORKER_URL}/mcp/${uuid}`;
-
-    return renderSuccessPage(mcpUrl, repo.full_name);
+    return renderSetupSuccessPage(env, brains);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Setup callback error:", error);
@@ -1666,65 +1859,76 @@ async function handleSetupCallback(request: Request, env: Env, ctx: ExecutionCon
 /**
  * Render success page with MCP endpoint
  */
-function renderSuccessPage(mcpUrl: string, repoName: string): Response {
+function renderSetupSuccessPage(
+  env: Env,
+  brains: Array<{ id: string; repo: string; created: boolean }>
+): Response {
+  const multiple = brains.length > 1;
+  const brainBlocks = brains.map((b) => {
+    const mcpUrl = `${env.WORKER_URL}/mcp/${b.id}`;
+    return `
+    <div class="brain-card">
+      <h3>${escapeHtml(b.repo)}</h3>
+      <div class="highlight">${escapeHtml(mcpUrl)}</div>
+      <p class="muted" style="margin-top:0.4rem;">${b.created ? "New brain — initial sync in progress." : "Already connected."}</p>
+    </div>`;
+  }).join("\n");
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Connected! - Brain Stem</title>
-  <style>${SITE_STYLES}</style>
+  <style>${SITE_STYLES}
+.brain-card { border: 1px solid #e5e5e5; border-radius: 10px; padding: 1rem 1.25rem; margin: 1rem 0; }
+.brain-card h3 { margin: 0 0 0.5rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.95rem; }
+  </style>
 </head>
 <body>
   <div class="container">
     <h1 class="success">Connected!</h1>
-    <p>Your repository <strong>${escapeHtml(repoName)}</strong> is now connected. Content will be synced and searchable after your next push.</p>
+    <p>${multiple
+      ? `<strong>${brains.length} repositories</strong> are now connected — each is its own isolated brain with its own URL. Content syncs and becomes searchable within a minute or two.`
+      : `Your repository <strong>${escapeHtml(brains[0]?.repo || "")}</strong> is now connected. Content will be synced and searchable shortly.`}</p>
 
     <hr>
 
     <h2>Step 1: Get your auth token</h2>
-    <p>Brain Stem uses GitHub to verify you own your repos. Click below to authenticate and get your bearer token.</p>
+    <p>Brain Stem uses GitHub to verify you own your repos. Click below to authenticate and get your bearer token${multiple ? " — one token works for all your brains" : ""}.</p>
     <a href="/oauth/authorize" class="btn btn-success">Authorize with GitHub</a>
 
     <hr>
 
-    <h2>Step 2: Configure your AI client</h2>
+    <h2>Step 2: Your ${multiple ? "brains" : "endpoint"}</h2>
+    ${multiple ? `<p class="muted">Add each brain as a separate connector and switch between them by URL. Pick which one receives web clips on the <a href="/oauth/authorize">auth page</a>.</p>` : ""}
+    ${brainBlocks}
 
+    <hr>
+
+    <h2>Configure your AI client</h2>
     <h3>Claude Desktop / Claude Code</h3>
-    <p>Add to your MCP config (on macOS: <code>~/.config/claude/mcp_servers.json</code>):</p>
+    <p>Add to your MCP config (on macOS: <code>~/.config/claude/mcp_servers.json</code>), using one brain's URL and your token from step 1:</p>
     <pre><code>{
   "mcpServers": {
     "my-brain": {
-      "url": "${escapeHtml(mcpUrl)}",
+      "url": "${escapeHtml(`${env.WORKER_URL}/mcp/${brains[0]?.id || "{uuid}"}`)}",
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN_HERE"
       }
     }
   }
 }</code></pre>
-    <p class="muted">Replace <code>YOUR_TOKEN_HERE</code> with your bearer token from step 1.</p>
-
     <h3>Claude.ai (Web)</h3>
-    <p>Settings → Connectors → Add custom connector → paste your endpoint URL and add the Authorization header.</p>
-
-    <hr>
-
-    <h2>Your endpoint</h2>
-    <div class="highlight">${escapeHtml(mcpUrl)}</div>
+    <p>Settings → Connectors → Add custom connector → paste a brain's endpoint URL.</p>
 
     <hr>
 
     <h2>What else can you do?</h2>
-    <p class="muted">Once connected, your AI has access to eight tools: search, document retrieval, folder browsing, note-taking, and email forwarding setup.</p>
     <ul>
       <li><strong>Save web pages:</strong> Get the bookmarklet from your <a href="/oauth/authorize">OAuth success page</a></li>
       <li><strong>Forward emails:</strong> Set up email-to-brain by asking your AI about <code>brain_account</code></li>
     </ul>
-
-    <hr>
-
-    <h2>Already installed?</h2>
-    <p>Need a new token? You can <a href="/oauth/authorize">re-authorize with GitHub</a> at any time to get a fresh bearer token.</p>
 
     <div class="footer">
       <p>Questions? Check the <a href="https://github.com/dudgeon/git-brain/blob/main/TROUBLESHOOTING.md">troubleshooting guide</a>.</p>
@@ -1774,7 +1978,7 @@ async function logWebhook(
 /**
  * Handle /webhook/github - GitHub webhook endpoint
  */
-async function handleGitHubWebhook(request: Request, env: Env): Promise<Response> {
+async function handleGitHubWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const signature = request.headers.get("x-hub-signature-256");
   const body = await request.text();
   const event = request.headers.get("x-github-event") || "unknown";
@@ -1799,12 +2003,19 @@ async function handleGitHubWebhook(request: Request, env: Env): Promise<Response
       return new Response("Missing installation ID in payload", { status: 400 });
     }
 
-    const installation = await env.DB.prepare(
-      "SELECT * FROM installations WHERE github_installation_id = ?"
-    ).bind(parseInt(githubInstallationId)).first<Installation>();
+    // Multi-repo (ADR-011): resolve the specific brain by (installation, repo).
+    // One GitHub installation can back several brains (one per repo).
+    const repoFullName: string | undefined = payload.repository?.full_name;
+    if (!repoFullName) {
+      await logWebhook(env, event, githubInstallationId, "push without repository name", "ignored", "Missing repository.full_name");
+      return new Response("OK");
+    }
+
+    await ensureMultiRepoSchema(env);
+    const installation = await getBrainForPush(env, parseInt(githubInstallationId), repoFullName);
 
     if (!installation) {
-      await logWebhook(env, event, githubInstallationId, `push to unknown installation`, "ignored", "Installation not found in DB");
+      await logWebhook(env, event, githubInstallationId, `push to unconnected repo ${repoFullName}`, "ignored", "No brain for this repo");
       return new Response("OK"); // Don't fail, just ignore
     }
 
@@ -1833,25 +2044,42 @@ async function handleGitHubWebhook(request: Request, env: Env): Promise<Response
       console.error("Webhook sync error:", error);
     }
   } else if (event === "installation" && payload.action === "deleted") {
-    // Handle app uninstallation — purge R2 files, D1 records, sessions
+    // App uninstalled — purge EVERY brain backed by this installation (ADR-011)
     if (githubInstallationId) {
-      const installation = await env.DB.prepare(
-        "SELECT id FROM installations WHERE github_installation_id = ?"
-      ).bind(parseInt(githubInstallationId)).first<{ id: string }>();
+      await ensureMultiRepoSchema(env);
+      const brains = await getBrainsForInstallation(env, parseInt(githubInstallationId));
 
-      if (installation) {
-        try {
-          const result = await deleteInstallation(env, installation.id);
-          await logWebhook(env, `${event}:${payload.action}`, githubInstallationId,
-            `Deleted installation: ${result.deleted} R2 objects purged`, "success");
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : "Unknown";
-          await logWebhook(env, `${event}:${payload.action}`, githubInstallationId,
-            "deletion failed", "error", msg);
+      if (brains.length > 0) {
+        let totalDeleted = 0;
+        let failures = 0;
+        for (const brain of brains) {
+          try {
+            // Skip per-brain reindex; we reindex once after the loop.
+            const result = await deleteInstallation(env, brain.id, { reindex: false });
+            totalDeleted += result.deleted;
+          } catch (error) {
+            failures++;
+            console.error(`Failed to delete brain ${brain.id}:`, error);
+          }
         }
+        await triggerAISearchReindex(env).catch((e) => console.error("Reindex trigger failed:", e));
+        await logWebhook(env, `${event}:${payload.action}`, githubInstallationId,
+          `Deleted ${brains.length - failures}/${brains.length} brains: ${totalDeleted} R2 objects purged`,
+          failures > 0 ? "error" : "success");
       } else {
         await logWebhook(env, `${event}:${payload.action}`, githubInstallationId,
           "uninstalled (no DB record found)", "logged");
+      }
+    }
+  } else if (event === "installation_repositories") {
+    // Repos added to / removed from an existing installation (ADR-011)
+    if (githubInstallationId) {
+      try {
+        const summary = await handleInstallationRepositories(env, ctx, parseInt(githubInstallationId), payload);
+        await logWebhook(env, `${event}:${payload.action || "?"}`, githubInstallationId, summary, "success");
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown";
+        await logWebhook(env, `${event}:${payload.action || "?"}`, githubInstallationId, "repo change failed", "error", msg);
       }
     }
   } else if (event === "ping") {
@@ -2020,7 +2248,11 @@ async function syncChangedFiles(
 /**
  * Delete an installation: purge R2 files, D1 records, sessions, and trigger AI Search reindex
  */
-async function deleteInstallation(env: Env, installationUuid: string): Promise<{ deleted: number }> {
+async function deleteInstallation(
+  env: Env,
+  installationUuid: string,
+  opts: { reindex?: boolean } = {}
+): Promise<{ deleted: number }> {
   const prefix = `brains/${installationUuid}/`;
   let totalDeleted = 0;
 
@@ -2035,26 +2267,37 @@ async function deleteInstallation(env: Env, installationUuid: string): Promise<{
     cursor = listed.truncated ? listed.cursor : undefined;
   } while (cursor);
 
-  // Get user_id before deleting installation
+  // Capture owner + default flag before deleting the row
   const inst = await env.DB.prepare(
-    "SELECT user_id FROM installations WHERE id = ?"
-  ).bind(installationUuid).first<{ user_id: string | null }>();
+    "SELECT user_id, is_default_for_user FROM installations WHERE id = ?"
+  ).bind(installationUuid).first<{ user_id: string | null; is_default_for_user: number | null }>();
 
   // Delete D1 installation record
   await env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(installationUuid).run();
 
-  // Revoke all sessions for the owning user
-  if (inst?.user_id) {
-    await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(inst.user_id).run();
-  }
-
-  // Clean up email-related data for this installation
+  // Clean up email-related data for this brain
   await env.DB.prepare("DELETE FROM email_aliases WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
   await env.DB.prepare("DELETE FROM verified_senders WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
   await env.DB.prepare("DELETE FROM email_log WHERE installation_id = ?").bind(installationUuid).run().catch(() => {});
 
-  // Trigger AI Search reindex to drop stale vectors
-  await triggerAISearchReindex(env);
+  // Sessions are per-user, not per-brain (ADR-011). Only revoke when this was the
+  // user's LAST brain; otherwise their other brains must stay accessible.
+  if (inst?.user_id) {
+    const remaining = await env.DB.prepare(
+      "SELECT COUNT(*) AS cnt FROM installations WHERE user_id = ?"
+    ).bind(inst.user_id).first<{ cnt: number }>();
+    if (!remaining || remaining.cnt === 0) {
+      await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(inst.user_id).run();
+    } else if (inst.is_default_for_user) {
+      // Deleted brain was the default — promote another so writes still route.
+      await ensureUserHasDefault(env, inst.user_id);
+    }
+  }
+
+  // Trigger AI Search reindex to drop stale vectors (skippable for batch deletes)
+  if (opts.reindex !== false) {
+    await triggerAISearchReindex(env);
+  }
 
   console.log(`Deleted installation ${installationUuid}: ${totalDeleted} R2 objects purged`);
   return { deleted: totalDeleted };
@@ -2588,10 +2831,15 @@ async function handleOAuthCallback(request: Request, env: Env): Promise<Response
   // Create or update user in D1
   const userId = await upsertUser(env, githubUser.id, githubUser.login);
 
+  await ensureMultiRepoSchema(env);
+
   // Link any unclaimed installations to this user (by GitHub login)
   await env.DB.prepare(`
     UPDATE installations SET user_id = ? WHERE account_login = ? AND user_id IS NULL
   `).bind(userId, githubUser.login).run();
+
+  // Guarantee the user has exactly one default brain (write target for clip/bookmarklet)
+  await ensureUserHasDefault(env, userId);
 
   // Clear the state cookie
   const clearCookie = "oauth_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/";
@@ -2638,13 +2886,11 @@ async function handleOAuthCallback(request: Request, env: Env): Promise<Response
     VALUES (?, ?, ?, ?, ?)
   `).bind(sessionId, userId, tokenData.access_token, new Date().toISOString(), expiresAt.toISOString()).run();
 
-  // Look up the user's installation UUID for the success page
-  const installation = await env.DB.prepare(
-    "SELECT id FROM installations WHERE user_id = ? LIMIT 1"
-  ).bind(userId).first<{ id: string }>();
+  // List all of the user's brains for the success page (ADR-011)
+  const brains = await getBrainsForUser(env, userId);
 
   // Show success page with token
-  return renderOAuthSuccessPage(env, sessionId, githubUser.login, expiresAt, clearCookie, installation?.id || null);
+  return renderOAuthSuccessPage(env, sessionId, githubUser.login, expiresAt, clearCookie, brains);
 }
 
 /**
@@ -2656,11 +2902,30 @@ function renderOAuthSuccessPage(
   githubLogin: string,
   expiresAt: Date,
   clearCookie: string,
-  installationUuid: string | null
+  brains: Installation[]
 ): Response {
-  const mcpUrl = installationUuid
-    ? `${env.WORKER_URL}/mcp/${installationUuid}`
-    : null;
+  const hasBrains = brains.length > 0;
+  const multiple = brains.length > 1;
+  const defaultId = brains.find((b) => b.is_default_for_user)?.id || brains[0]?.id || null;
+  const primaryUrl = brains[0] ? `${env.WORKER_URL}/mcp/${brains[0].id}` : null;
+
+  // One connect-block per brain: MCP URL + (when multiple) a "default" radio.
+  const brainRows = brains.map((b, i) => {
+    const url = `${env.WORKER_URL}/mcp/${b.id}`;
+    const isDefault = b.id === defaultId;
+    const radio = multiple
+      ? `<label class="default-radio"><input type="radio" name="defaultBrain" value="${escapeHtml(b.id)}" ${isDefault ? "checked" : ""} onchange="setDefault(this.value)"> Default for web clips</label>`
+      : "";
+    return `
+    <div class="brain-row">
+      <div class="field-label">${escapeHtml(b.repo_full_name)}${isDefault && multiple ? ' <span class="default-badge">default</span>' : ""}</div>
+      <div class="copy-field">
+        <input type="text" readonly value="${escapeHtml(url)}" id="mcp-url-${i}">
+        <button class="copy-btn" onclick="copyField('mcp-url-${i}', this)">Copy</button>
+      </div>
+      ${radio}
+    </div>`;
+  }).join("\n");
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -2683,6 +2948,9 @@ function renderOAuthSuccessPage(
 .bookmarklet-link { display: inline-block; padding: 10px 20px; background: #1a1a1a; color: white; border-radius: 8px; font-size: 0.9375rem; font-weight: 600; text-decoration: none; cursor: grab; transition: all 0.15s ease; }
 .bookmarklet-link:hover { background: #333; transform: translateY(-1px); }
 .bookmarklet-link:active { cursor: grabbing; }
+.brain-row { border: 1px solid #e5e5e5; border-radius: 10px; padding: 0.85rem 1rem; margin: 0.75rem 0; }
+.default-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: #52525b; cursor: pointer; }
+.default-badge { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
   </style>
 </head>
 <body>
@@ -2690,38 +2958,34 @@ function renderOAuthSuccessPage(
     <h1 class="success">Authenticated!</h1>
     <p>Welcome, <strong>${escapeHtml(githubLogin)}</strong>.</p>
 
-    ${mcpUrl ? `
+    ${hasBrains ? `
     <hr>
-    <h2>Connect to Claude.ai</h2>
-    <p>In <a href="https://claude.ai/settings/connectors" target="_blank">Claude.ai Settings &rarr; Connectors</a> &rarr; Add custom connector</p>
-
-    <div class="field-label">Remote server MCP url</div>
-    <div class="copy-field">
-      <input type="text" readonly value="${escapeHtml(mcpUrl)}" id="mcp-url">
-      <button class="copy-btn" onclick="copyField('mcp-url', this)">Copy</button>
-    </div>
+    <h2>Your ${multiple ? `brains (${brains.length})` : "brain"}</h2>
+    <p>${multiple
+      ? `Each repository is its own isolated brain. Add any of these as a custom connector in <a href="https://claude.ai/settings/connectors" target="_blank">Claude.ai Settings &rarr; Connectors</a>, or in Claude Desktop/Code. The <strong>default</strong> brain receives web clips.`
+      : `Add this as a custom connector in <a href="https://claude.ai/settings/connectors" target="_blank">Claude.ai Settings &rarr; Connectors</a>, or in Claude Desktop/Code.`}</p>
+    ${brainRows}
+    <div class="field-note" id="default-status"></div>
     <div class="info-box">OAuth Client ID and Client Secret are not needed &mdash; Claude.ai handles authentication automatically.</div>
     ` : `
     <hr>
-    <div class="warning-box"><strong>No installation found.</strong> <a href="/">Connect a repository</a> first, then return here to get your MCP URL.</div>
+    <div class="warning-box"><strong>No connected repositories found.</strong> <a href="/">Connect a repository</a> first, then return here to get your MCP URL.</div>
     `}
 
     <hr>
-    <h2>Claude Code / Desktop</h2>
-    <p>Add to your MCP config:</p>
-
-    <div class="field-label">Bearer Token</div>
+    <h2>Bearer Token</h2>
+    <p>Use this token's <code>Authorization: Bearer</code> header with any brain above.</p>
     <div class="copy-field">
       <input type="text" readonly value="${escapeHtml(sessionId)}" id="bearer-token">
       <button class="copy-btn" onclick="copyField('bearer-token', this)">Copy</button>
     </div>
     <div class="field-note">Expires: ${expiresAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
 
-    ${mcpUrl ? `
+    ${primaryUrl ? `
     <pre><code>{
   "mcpServers": {
     "my-brain": {
-      "url": "${escapeHtml(mcpUrl)}",
+      "url": "${escapeHtml(primaryUrl)}",
       "headers": {
         "Authorization": "Bearer ${escapeHtml(sessionId)}"
       }
@@ -2730,10 +2994,10 @@ function renderOAuthSuccessPage(
 }</code></pre>
     ` : ''}
 
-    ${mcpUrl ? `
+    ${hasBrains ? `
     <hr>
     <h2>Web Clipper</h2>
-    <p>Save articles from any browser. <a href="/bookmarklet">Full setup instructions &rarr;</a></p>
+    <p>Save articles from any browser to your ${multiple ? "<strong>default</strong> brain" : "brain"}. <a href="/bookmarklet">Full setup &amp; per-brain bookmarklets &rarr;</a></p>
     <p style="margin-top: 0.75rem;">Drag this to your bookmarks bar:</p>
     <p style="text-align: center; margin: 0.75rem 0;">
       <a class="bookmarklet-link" href="${(() => { const js = bookmarkletTemplate.replace(/__TOKEN__/g, sessionId).replace(/__API__/g, env.WORKER_URL + '/api/clip').trim().replace(/;$/, ''); return 'javascript:void(' + encodeURIComponent(js) + ')'; })()}">Save to Brain</a>
@@ -2743,6 +3007,7 @@ function renderOAuthSuccessPage(
     <div class="info-box">Need a new token? You can <a href="/oauth/authorize">re-authorize with GitHub</a> anytime.</div>
   </div>
   <script>
+const TOKEN = ${JSON.stringify(sessionId)};
 function copyField(id, btn) {
   const input = document.getElementById(id);
   navigator.clipboard.writeText(input.value).then(() => {
@@ -2750,6 +3015,20 @@ function copyField(id, btn) {
     btn.classList.add('copied');
     setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
   });
+}
+async function setDefault(brainId) {
+  const status = document.getElementById('default-status');
+  if (status) status.textContent = 'Updating default…';
+  try {
+    const res = await fetch('/api/default-brain', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brainId: brainId })
+    });
+    if (status) status.textContent = res.ok ? 'Default brain updated ✓' : 'Could not update default.';
+  } catch (e) {
+    if (status) status.textContent = 'Could not update default.';
+  }
 }
   </script>
 </body>
@@ -2766,10 +3045,28 @@ function copyField(id, btn) {
 function renderBookmarkletPage(
   env: Env,
   sessionId: string,
-  installationUuid: string | null
+  brains: Installation[]
 ): Response {
-  const bookmarkletJs = bookmarkletTemplate.replace(/__TOKEN__/g, sessionId).replace(/__API__/g, `${env.WORKER_URL}/api/clip`).trim().replace(/;$/, '');
-  const bookmarkletHref = `javascript:void(${encodeURIComponent(bookmarkletJs)})`;
+  const hasBrains = brains.length > 0;
+  const multiple = brains.length > 1;
+  const defaultId = brains.find((b) => b.is_default_for_user)?.id || brains[0]?.id || null;
+
+  const makeHref = (apiUrl: string) => {
+    const js = bookmarkletTemplate.replace(/__TOKEN__/g, sessionId).replace(/__API__/g, apiUrl).trim().replace(/;$/, "");
+    return `javascript:void(${encodeURIComponent(js)})`;
+  };
+
+  // Default bookmarklet targets the default brain (plain /api/clip).
+  const defaultHref = makeHref(`${env.WORKER_URL}/api/clip`);
+
+  // Per-brain bookmarklets pin a specific brain via ?brain={id}.
+  const perBrainLinks = multiple
+    ? brains.map((b) => {
+        const isDefault = b.id === defaultId;
+        const href = isDefault ? defaultHref : makeHref(`${env.WORKER_URL}/api/clip?brain=${b.id}`);
+        return `<p style="margin: 0.5rem 0;"><a class="bookmarklet-link" href="${href}">Save to ${escapeHtml(b.repo_full_name)}</a>${isDefault ? ' <span class="default-badge">default</span>' : ""}</p>`;
+      }).join("\n")
+    : "";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -2781,6 +3078,7 @@ function renderBookmarkletPage(
 .bookmarklet-link { display: inline-block; padding: 12px 24px; background: #1a1a1a; color: white; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; cursor: grab; transition: all 0.15s ease; }
 .bookmarklet-link:hover { background: #333; transform: translateY(-1px); }
 .bookmarklet-link:active { cursor: grabbing; }
+.default-badge { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
 .instructions { background: #f4f4f5; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
 .instructions ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }
 .instructions li { margin: 0.4rem 0; line-height: 1.5; }
@@ -2794,18 +3092,22 @@ function renderBookmarkletPage(
     <h1>Web Clipper</h1>
     <p>Save articles and web pages to your brain inbox from any browser.</p>
 
-    ${installationUuid ? `
+    ${hasBrains ? `
     <hr>
     <h2>Bookmarklet</h2>
     <div class="instructions">
+      ${multiple ? `
+      <p><strong>Drag a brain's button to your bookmarks bar.</strong> Each saves to that specific brain; the default is used by the plain "Save to Brain".</p>
+      ${perBrainLinks}
+      ` : `
       <p><strong>Drag this link to your bookmarks bar:</strong></p>
       <p style="margin-top: 0.75rem; text-align: center;">
-        <a class="bookmarklet-link" href="${bookmarkletHref}">Save to Brain</a>
-      </p>
+        <a class="bookmarklet-link" href="${defaultHref}">Save to Brain</a>
+      </p>`}
       <ol>
-        <li>Drag the button above to your browser's bookmarks bar</li>
+        <li>Drag a button above to your browser's bookmarks bar</li>
         <li>Navigate to any article or web page</li>
-        <li>Click "Save to Brain" in your bookmarks bar</li>
+        <li>Click it in your bookmarks bar</li>
         <li>Optionally add a context note when prompted</li>
         <li>The article will be extracted and saved to your brain inbox</li>
       </ol>
@@ -2831,6 +3133,7 @@ Body (JSON):
   url: [Share Sheet Input]
   title: [Name]
   context: [Ask for Input result]</div>
+        ${multiple ? `<p class="muted" style="font-size:0.8125rem;">Saves to your <strong>default</strong> brain. To target a specific brain, append <code>?brain={uuid}</code> to the URL above.</p>` : ""}
         <ol start="6">
           <li>Add a <strong>"Show Notification"</strong> action: "Saved to brain!"</li>
         </ol>
@@ -3033,7 +3336,7 @@ export default {
 
     // Handle /webhook/github - GitHub webhooks
     if (url.pathname === "/webhook/github" && request.method === "POST") {
-      return handleGitHubWebhook(request, env);
+      return handleGitHubWebhook(request, env, ctx);
     }
 
     // Handle /oauth/authorize - Start OAuth flow
@@ -3067,16 +3370,20 @@ export default {
         try {
           const auth = await authenticateRequest(request, env);
           if (auth instanceof Response) return addCorsHeaders(auth);
-          // Resolve user's installation
-          const installation = await env.DB.prepare(
-            "SELECT id FROM installations WHERE user_id = ? LIMIT 1"
-          ).bind(auth.userId).first<{ id: string }>();
-          if (!installation) {
-            return addCorsHeaders(new Response(JSON.stringify({ ok: false, error: "No installation found. Visit /setup first." }), {
+          // Resolve the user's brains + default write target (ADR-011)
+          await ensureMultiRepoSchema(env);
+          const brains = await getBrainsForUser(env, auth.userId);
+          if (brains.length === 0) {
+            return addCorsHeaders(new Response(JSON.stringify({ ok: false, error: "No brain found. Visit /setup first." }), {
               status: 404, headers: { "Content-Type": "application/json" },
             }));
           }
-          return addCorsHeaders(await handleClip(request, env, installation.id));
+          const defaultBrain = await getDefaultBrainForUser(env, auth.userId);
+          return addCorsHeaders(await handleClip(request, env, {
+            defaultInstallationId: defaultBrain?.id ?? brains[0].id,
+            allowedInstallationIds: brains.map((b) => b.id),
+            overrideInstallationId: url.searchParams.get("brain") || url.searchParams.get("installation"),
+          }));
         } catch (err) {
           const message = err instanceof Error ? err.message : "Internal server error";
           return new Response(JSON.stringify({ ok: false, error: message }), {
@@ -3087,15 +3394,38 @@ export default {
       }
     }
 
+    // Handle /api/default-brain - set the user's default write target (ADR-011, Q3)
+    if (url.pathname === "/api/default-brain" && request.method === "POST") {
+      const auth = await authenticateRequest(request, env);
+      if (auth instanceof Response) return auth;
+      await ensureMultiRepoSchema(env);
+      let body: { brainId?: string };
+      try {
+        body = await request.json() as { brainId?: string };
+      } catch {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid JSON" }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (!body.brainId) {
+        return new Response(JSON.stringify({ ok: false, error: "brainId required" }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        });
+      }
+      const ok = await setDefaultBrainForUser(env, auth.userId, body.brainId);
+      return new Response(JSON.stringify({ ok }), {
+        status: ok ? 200 : 403, headers: { "Content-Type": "application/json" },
+      });
+    }
+
     // Handle /bookmarklet - Bookmarklet delivery page (authenticated)
     if (url.pathname === "/bookmarklet" && request.method === "GET") {
       const auth = await authenticateRequest(request, env);
       if (auth instanceof Response) return auth;
-      const installation = await env.DB.prepare(
-        "SELECT id FROM installations WHERE user_id = ? LIMIT 1"
-      ).bind(auth.userId).first<{ id: string }>();
+      await ensureMultiRepoSchema(env);
+      const brains = await getBrainsForUser(env, auth.userId);
       const sessionId = request.headers.get("Authorization")?.slice(7) || "";
-      return renderBookmarkletPage(env, sessionId, installation?.id || null);
+      return renderBookmarkletPage(env, sessionId, brains);
     }
 
     // All /debug/* endpoints require authentication
