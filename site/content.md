@@ -133,25 +133,32 @@ Already connected? Get your auth token | View setup
 
 ## Success Page (`/setup/callback`)
 
+One brain is created per connected repository (ADR-011). The page lists every resulting brain and its MCP URL.
+
 ### Title
 
 Connected!
 
 ### Intro
 
-Your repository **{repo-name}** is now synced and searchable.
+- Single repo: Your repository **{repo-name}** is now connected. Content will be synced and searchable shortly.
+- Multiple repos: **{N} repositories** are now connected — each is its own isolated brain with its own URL. Content syncs and becomes searchable within a minute or two.
 
 ### Step 1: Get Your Auth Token
 
-Brain Stem uses GitHub to verify you own your repos. Click below to authenticate and get your bearer token.
+Brain Stem uses GitHub to verify you own your repos. Click below to authenticate and get your bearer token (one token works for all your brains).
 
 **CTA:** Authorize with GitHub
 
-### Step 2: Configure Your AI Client
+### Step 2: Your brains
+
+One block per connected repo, each showing the repo name and its endpoint `https://brainstem.cc/mcp/{uuid}` (with a "New brain — initial sync in progress" / "Already connected" note). When multiple brains exist, the page notes you can pick which one receives web clips on the auth page.
+
+### Configure Your AI Client
 
 #### Claude Desktop / Claude Code
 
-Add to your MCP config (on macOS: `~/.config/claude/mcp_servers.json`):
+Add to your MCP config (on macOS: `~/.config/claude/mcp_servers.json`), using one brain's URL and your token from step 1:
 
 ```json
 {
@@ -166,19 +173,9 @@ Add to your MCP config (on macOS: `~/.config/claude/mcp_servers.json`):
 }
 ```
 
-Replace `{uuid}` with your installation ID below, and `YOUR_TOKEN_HERE` with your bearer token from step 1.
-
 #### Claude.ai (Web)
 
-Settings → Connectors → Add custom connector → paste your endpoint URL and add the Authorization header.
-
-### Your Installation ID
-
-`{uuid}`
-
-### Your Endpoint
-
-`https://brainstem.cc/mcp/{uuid}`
+Settings → Connectors → Add custom connector → paste a brain's endpoint URL.
 
 ### What else can you do?
 
@@ -186,10 +183,6 @@ Once connected, your AI has access to eight tools: search, document retrieval, f
 
 - **Save web pages**: Get the bookmarklet from your [OAuth success page](/oauth/authorize)
 - **Forward emails**: Set up email-to-brain in any connected client by asking about `brain_account`
-
-### Already installed?
-
-Need a new token? You can [re-authorize with GitHub](/oauth/authorize) at any time to get a fresh bearer token.
 
 ### Help
 
@@ -207,21 +200,21 @@ Authenticated!
 
 Welcome, **{github-login}**.
 
-### Connect to Claude.ai (shown if installation found)
+### Your brains (shown if at least one brain found)
 
-In Claude.ai Settings → Connectors → Add custom connector
+Lists every brain the user owns (ADR-011). For each: the repo name and its MCP URL `{mcp-url}` [Copy]. Add any of them as a custom connector in Claude.ai Settings → Connectors, or in Claude Desktop/Code.
 
-**Remote server MCP url:** `{mcp-url}` [Copy]
+When the user has more than one brain, each block also shows a **"Default for web clips"** radio. Selecting one POSTs to `/api/default-brain` and marks that brain as the web-clip target (a "default" badge marks the current one).
 
 > OAuth Client ID and Client Secret are not needed — Claude.ai handles authentication automatically.
 
-### No installation warning (shown if no installation found)
+### No brains warning (shown if no brain found)
 
-> **No installation found.** [Connect a repository](/setup) first, then return here to get your MCP URL.
+> **No connected repositories found.** [Connect a repository](/setup) first, then return here to get your MCP URL.
 
-### Claude Code / Desktop
+### Bearer Token
 
-Add to your MCP config:
+Use this token's `Authorization: Bearer` header with any brain above.
 
 **Bearer Token:** `{session-token}` [Copy]
 
@@ -242,13 +235,13 @@ Expires: {expiry-date}
 
 > Need a new token? You can [re-authorize with GitHub](/oauth/authorize) anytime.
 
-### Web Clipper (shown if installation found)
+### Web Clipper (shown if at least one brain found)
 
-Save articles from any browser. [Full setup instructions →](/bookmarklet)
+Save articles from any browser to your **default** brain (when multiple). [Full setup & per-brain bookmarklets →](/bookmarklet)
 
 Drag this to your bookmarks bar:
 
-**[Save to Brain]** ← draggable bookmarklet link (bearer token embedded)
+**[Save to Brain]** ← draggable bookmarklet link (bearer token embedded, targets the default brain)
 
 ---
 
@@ -264,11 +257,12 @@ Save articles and web pages to your brain inbox from any browser.
 
 ### Bookmarklet
 
-Drag this to your bookmarks bar: **[Save to Brain]**
+- Single brain: Drag this to your bookmarks bar: **[Save to Brain]**
+- Multiple brains (ADR-011): one draggable button per brain — **[Save to {repo-name}]** — each pinned to that brain via `/api/clip?brain={uuid}`. The default brain's button is the plain "Save to Brain" and is badged "default".
 
-1. Drag the button above to your browser's bookmarks bar
+1. Drag a button above to your browser's bookmarks bar
 2. Navigate to any article or web page
-3. Click "Save to Brain" in your bookmarks bar
+3. Click it in your bookmarks bar
 4. Optionally add a context note when prompted
 5. The article will be extracted and saved to your brain inbox
 

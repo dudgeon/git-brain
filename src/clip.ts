@@ -4,7 +4,7 @@
  */
 
 import TurndownService from "turndown";
-import { sanitizeInboxTitle, buildClipFrontmatter } from "./utils";
+import { sanitizeInboxTitle, buildClipFrontmatter, resolveClipInstallation } from "./utils";
 import { saveToInbox, type InboxEnv } from "./inbox";
 
 export interface ClipRequest {
@@ -13,6 +13,17 @@ export interface ClipRequest {
   html?: string;
   content?: string;
   context?: string;
+  /** Optional explicit target brain (overrides the user's default). */
+  installation?: string;
+  brain?: string;
+}
+
+/** Resolved clip target: a default brain + the set the user is allowed to write to. */
+export interface ClipTarget {
+  defaultInstallationId: string;
+  allowedInstallationIds: string[];
+  /** Override from the request URL (e.g. /api/clip?brain={id}). */
+  overrideInstallationId?: string | null;
 }
 
 /** CORS headers for cross-origin bookmarklet requests */
@@ -39,13 +50,15 @@ export function addCorsHeaders(response: Response): Response {
 }
 
 /**
- * Handle a web clip request
- * Expects authenticated userId and resolved installationId
+ * Handle a web clip request.
+ * Routes to the user's default brain unless the request explicitly targets
+ * another brain the user owns (via `?brain=` in the URL or `installation`/`brain`
+ * in the body). See ADR-011 (Q3).
  */
 export async function handleClip(
   request: Request,
   env: InboxEnv,
-  installationId: string,
+  target: ClipTarget,
 ): Promise<Response> {
   // Size limit: 1MB
   const contentLength = request.headers.get("Content-Length");
@@ -65,6 +78,20 @@ export async function handleClip(
   if (!body.url || typeof body.url !== "string") {
     return jsonResponse({ ok: false, error: "url is required" }, 400);
   }
+
+  // Resolve the target brain: explicit override (body or URL) must belong to the
+  // user; otherwise fall back to their default.
+  const resolved = resolveClipInstallation({
+    bodyInstallation: typeof body.installation === "string" ? body.installation : undefined,
+    bodyBrain: typeof body.brain === "string" ? body.brain : undefined,
+    overrideInstallationId: target.overrideInstallationId,
+    defaultInstallationId: target.defaultInstallationId,
+    allowedInstallationIds: target.allowedInstallationIds,
+  });
+  if ("error" in resolved) {
+    return jsonResponse({ ok: false, error: resolved.error }, 403);
+  }
+  const installationId = resolved.installationId;
 
   // Determine title (fall back to URL hostname)
   let title: string;

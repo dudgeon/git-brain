@@ -119,7 +119,9 @@ Installations are only linked to users on first OAuth (by matching GitHub login)
 
 GitHub Apps can be installed on multiple repos, but only the first repo is synced (`src/index.ts:1609`, `// For MVP, use the first repo`). A user cannot connect a second repo as a separate, isolated brain — especially not under the same GitHub account.
 
-**Decisions locked 2026-06-20** (see [ADR-011](adr/011-multi-repo-support.md)): **Option A — repo = brain.** Each repo gets its own UUID/MCP URL, reusing all existing per-brain isolation (R2, AI Search, email, clip) and leaving the tool layer untouched. Onboarding auto-creates a brain per accessible repo; clip/bookmarklet route to a **user-designated default brain**; vanity aliases become per-brain; existing extra repos are backfilled. Phased build in [Tasks-004](tasks/004-multi-repo-support.md) — not yet started.
+**Decisions locked 2026-06-20** (see [ADR-011](adr/011-multi-repo-support.md)): **Option A — repo = brain.** Each repo gets its own UUID/MCP URL, reusing all existing per-brain isolation (R2, AI Search, email, clip) and leaving the tool layer untouched. Onboarding auto-creates a brain per accessible repo; clip/bookmarklet route to a **user-designated default brain**; vanity aliases are already per-brain; existing extra repos are backfilled via `scripts/backfill-brains.mjs`.
+
+**Status: code complete** (Phases 0–6.1, [Tasks-004](tasks/004-multi-repo-support.md)) on branch `claude/relaxed-franklin-k2xzgw` — typecheck clean, 91 unit tests green. **Pending:** deploy + live two-brain verification (deferred until merge), and confirming the GitHub App subscribes to the `installation_repositories` webhook event.
 
 ### [BUG] Write surfaces pick an arbitrary brain when a user owns more than one
 

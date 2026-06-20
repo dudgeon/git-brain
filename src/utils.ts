@@ -119,6 +119,39 @@ export function normalizeEmailAddress(address: string): string {
 }
 
 /**
+ * Resolve which brain a web clip should write to (ADR-011, Q3).
+ * Explicit overrides (request body or URL) must be in the allowed set; otherwise
+ * the user's default brain is used. Pure so it can be unit-tested.
+ */
+export function resolveClipInstallation(opts: {
+  bodyInstallation?: string;
+  bodyBrain?: string;
+  overrideInstallationId?: string | null;
+  defaultInstallationId: string;
+  allowedInstallationIds: string[];
+}): { installationId: string } | { error: string } {
+  const allowed = new Set(opts.allowedInstallationIds);
+  const override = opts.bodyInstallation || opts.bodyBrain || opts.overrideInstallationId || null;
+  if (override) {
+    if (!allowed.has(override)) return { error: "You don't have access to that brain." };
+    return { installationId: override };
+  }
+  return { installationId: opts.defaultInstallationId };
+}
+
+/**
+ * Parse added/removed repo full-names from an installation_repositories webhook.
+ */
+export function parseRepositoryChanges(payload: {
+  repositories_added?: Array<{ full_name?: string }>;
+  repositories_removed?: Array<{ full_name?: string }>;
+}): { added: string[]; removed: string[] } {
+  const pick = (arr?: Array<{ full_name?: string }>) =>
+    (arr ?? []).map((r) => r.full_name).filter((n): n is string => typeof n === "string" && n.length > 0);
+  return { added: pick(payload.repositories_added), removed: pick(payload.repositories_removed) };
+}
+
+/**
  * Resolve an installation UUID from a brainstem email address
  * Returns the UUID if it's a sub-address (brain+{uuid}@brainstem.cc),
  * or the local-part for alias lookup
