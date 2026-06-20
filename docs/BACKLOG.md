@@ -115,11 +115,11 @@ Installations are only linked to users on first OAuth (by matching GitHub login)
 
 **Fix:** Either require OAuth before App installation, or request user identity during the App installation callback.
 
-### Multi-repo support → [PRD-003](prd/003-multi-repo-support.md)
+### Multi-repo support → [PRD-003](prd/003-multi-repo-support.md), [ADR-011](adr/011-multi-repo-support.md), [Tasks-004](tasks/004-multi-repo-support.md)
 
 GitHub Apps can be installed on multiple repos, but only the first repo is synced (`src/index.ts:1609`, `// For MVP, use the first repo`). A user cannot connect a second repo as a separate, isolated brain — especially not under the same GitHub account.
 
-Full plan, surface-by-surface, in [PRD-003](prd/003-multi-repo-support.md). Recommended approach (**Option A**): treat each repo as its own brain (UUID/MCP URL), which reuses all existing per-brain isolation (R2, AI Search, email, clip) and leaves the tool layer untouched. The PRD also enumerates the unresolved **intent questions** (brain granularity, default write target, vanity-alias scope, backfill) to settle before building.
+**Decisions locked 2026-06-20** (see [ADR-011](adr/011-multi-repo-support.md)): **Option A — repo = brain.** Each repo gets its own UUID/MCP URL, reusing all existing per-brain isolation (R2, AI Search, email, clip) and leaving the tool layer untouched. Onboarding auto-creates a brain per accessible repo; clip/bookmarklet route to a **user-designated default brain**; vanity aliases become per-brain; existing extra repos are backfilled. Phased build in [Tasks-004](tasks/004-multi-repo-support.md) — not yet started.
 
 ### [BUG] Write surfaces pick an arbitrary brain when a user owns more than one
 
@@ -278,6 +278,8 @@ Items completed in v4.0-v4.3, for changelog reference:
 - [ADR-005: ChatGPT App Shared Core](adr/005-chatgpt-app.md)
 - [Tasks-003: ChatGPT App Submission](tasks/003-chatgpt-app.md)
 - [PRD-003: Multiple Repository Support](prd/003-multi-repo-support.md)
+- [ADR-011: Multiple Repository Support](adr/011-multi-repo-support.md)
+- [Tasks-004: Multiple Repository Support](tasks/004-multi-repo-support.md)
 - [ADR-008: Email Input](adr/008-email-input.md)
 - [ADR-009: MCP Apps Compatibility](adr/009-mcp-apps-compatibility.md)
 - [ADR-010: Chunking Strategy](adr/010-chunking-strategy.md)

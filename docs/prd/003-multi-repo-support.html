@@ -120,6 +120,11 @@
     <p class="lede">Connect more than one repo and keep each as a separate, non-commingled brain — accessed one at a time, not merged. Below is the plan, the one decision that gates everything, and six follow-ups. Make your picks inline, then hit <strong>Copy my choices</strong> and paste them back to me.</p>
   </header>
 
+  <div class="callout" style="border-color:var(--green-line);background:var(--green-bg)">
+    <h3 style="color:var(--green);margin-top:0">✓ Decisions locked — 2026-06-20</h3>
+    <p style="margin-bottom:0">Captured and confirmed; recorded in <strong>ADR-011</strong> and <strong>Tasks-004</strong>. Six picks matched the recommendation; <strong>Q3</strong> was changed to a <strong>user-designated default brain</strong>. The widget below reflects your locked choices (badged “Your pick”). Re-copy if anything needs to change.</p>
+  </div>
+
   <div class="callout rec">
     <h3>TL;DR — Recommended approach: <em>“Repo = Brain”</em> (Option A)</h3>
     <p>Each connected repo becomes its own brain with its own UUID, MCP URL, storage, and search scope. Because almost everything already keys on the brain UUID (<code>brains/{uuid}/</code>), this reuses <strong>all</strong> existing per-brain isolation and leaves the entire MCP tool layer untouched. It directly matches “access one brain, not the other,” and it works even when both repos live under the same GitHub account.</p>
@@ -226,6 +231,7 @@ const QUESTIONS = [
   {
     id: "Q3", title: "Default write target — clip / bookmarklet / unaddressed email",
     ctx: "When a write isn’t addressed to a specific brain, where does it land?",
+    chosen: 1,
     options: [
       { v: "Per-brain bookmarklet/clip target, no global default", rec: true, d: "Each bookmarklet/Shortcut carries its brain — zero ambiguity." },
       { v: "A user-designated default brain", d: "One “default” flag; unaddressed writes go there." },
@@ -272,7 +278,9 @@ const qRoot = document.getElementById("questions");
 
 QUESTIONS.forEach((q) => {
   const recIdx = q.options.findIndex(o => o.rec);
-  state[q.id] = recIdx >= 0 ? recIdx : 0;
+  const lockedIdx = (typeof q.chosen === "number") ? q.chosen : (recIdx >= 0 ? recIdx : 0);
+  q._locked = lockedIdx;
+  state[q.id] = lockedIdx;
 
   const card = document.createElement("div");
   card.className = "q";
@@ -283,9 +291,10 @@ QUESTIONS.forEach((q) => {
     const lab = document.createElement("label");
     lab.className = "opt" + (o.rec ? " rec" : "");
     lab.setAttribute("for", id);
+    const pick = (i === lockedIdx) ? ' <span class="pill" style="background:var(--ink);color:#fff">Your pick</span>' : '';
     lab.innerHTML =
       `<input type="radio" name="${q.id}" id="${id}" value="${i}" ${i === state[q.id] ? "checked" : ""}>` +
-      `<span class="opt-body"><span class="opt-label">${o.v}</span> ${o.rec ? '<span class="pill rec">Rec</span>' : ''}` +
+      `<span class="opt-body"><span class="opt-label">${o.v}</span> ${o.rec ? '<span class="pill rec">Rec</span>' : ''}${pick}` +
       `<div class="opt-desc">${o.d}</div></span>`;
     lab.querySelector("input").addEventListener("change", () => { state[q.id] = i; render(); });
     card.appendChild(lab);

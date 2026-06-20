@@ -1,9 +1,9 @@
 # PRD-003: Multiple Repository Support
 
-**Status:** Draft — planning only (no code yet). Several core decisions are unresolved; see [Intent Questions](#intent-questions-resolve-in-a-future-session) before implementing.
+**Status:** ✅ Decisions locked 2026-06-20 (see [§9 Decisions](#9-decisions-locked-2026-06-20)). Approach: **Option A — repo = brain.** Ready for implementation — see [ADR-011](../adr/011-multi-repo-support.md) and [Tasks-004](../tasks/004-multi-repo-support.md).
 **Author:** Claude (planning session)
 **Last updated:** 2026-06-20
-**Related:** [ADR-001 GitHub App](../adr/001-github-app.md), [ADR-002 Security Isolation](../adr/002-security-isolation.md), [ADR-002 OAuth Authentication](../adr/002-oauth-authentication.md), [ADR-008 Email Input](../adr/008-email-input.md), [BACKLOG → Multi-repo support](../BACKLOG.md)
+**Related:** [ADR-011 Multi-Repo Support](../adr/011-multi-repo-support.md), [Tasks-004](../tasks/004-multi-repo-support.md), [ADR-001 GitHub App](../adr/001-github-app.md), [ADR-002 Security Isolation](../adr/002-security-isolation.md), [ADR-002 OAuth Authentication](../adr/002-oauth-authentication.md), [ADR-008 Email Input](../adr/008-email-input.md), [BACKLOG → Multi-repo support](../BACKLOG.md)
 
 ---
 
@@ -95,11 +95,11 @@ Keep the `installations` table but **relax its 1-row-per-installation assumption
 CREATE UNIQUE INDEX IF NOT EXISTS idx_install_repo
   ON installations(github_installation_id, repo_full_name);
 
--- Optional (Intent Q3): mark a user's default write target for clip/bookmarklet.
+-- DECIDED (Q3): user-designated default brain — the write target for clip/bookmarklet
+-- (and any future unaddressed write). Convention: exactly one row with is_default_for_user=1 per user_id.
 ALTER TABLE installations ADD COLUMN is_default_for_user INTEGER DEFAULT 0;
 
--- Optional (Intent Q5): human label distinct from repo_full_name.
-ALTER TABLE installations ADD COLUMN nickname TEXT;
+-- Q6 decided "label brains by repo_full_name" → no nickname column needed for v1.
 ```
 
 Notes:
@@ -108,11 +108,18 @@ Notes:
 - Renaming the table to `brains` is cosmetic and risky (touches many queries) — defer; document the semantics instead. (See contradiction BUG-6.)
 - To keep a future Option C cheap, treat `installations` as the "brain" entity now; a `brain_repos` join table can be added later without breaking this.
 
+### Default-brain lifecycle (Q3)
+- The **first** brain created for a `user_id` is auto-marked `is_default_for_user = 1`.
+- Setting a new default clears the flag on the user's other brains in the same transaction (enforce single-default invariant in code; SQLite has no partial-unique-per-user constraint we want to rely on).
+- If the default brain is deleted (uninstall / repo removed), promote the most-recently-created remaining brain to default.
+- **Setting surface:** a "Set as default" control per brain on the OAuth success / brains-management page (§5.8). No new MCP tool required.
+
 ### Resolution helpers to add
 - `getBrainForPush(env, githubInstallationId, repoFullName)` → the one brain row.
 - `getBrainsForInstallation(env, githubInstallationId)` → all brains (for uninstall + repo-removed).
-- `getBrainsForUser(env, userId)` → all of a user's brains (for OAuth success page, clip/bookmarklet chooser).
-- `getDefaultBrainForUser(env, userId)` → resolves Q3 (default write target).
+- `getBrainsForUser(env, userId)` → all of a user's brains (OAuth success page, brains chooser).
+- `getDefaultBrainForUser(env, userId)` → the `is_default_for_user = 1` brain (clip/bookmarklet target).
+- `setDefaultBrainForUser(env, userId, brainId)` → flips the default atomically.
 
 ---
 
@@ -150,18 +157,18 @@ Handle `installation_repositories` (action `added`/`removed`) and the `repositor
 `src/email.ts`, `parseEmailRecipient`
 - Sub-address `brain+{uuid}@` and alias lookups already resolve to a specific brain. No routing change.
 - Ensure **each** brain provisions its default alias row when first touched (today the default alias is created in `brain_account` status; confirm it runs per-brain).
-- Decide vanity-alias scope: currently one vanity alias per installation — with multiple brains this should become **one per brain** (Intent Q5; small change to the uniqueness/scoping in `handleRequestAlias`).
+- **DECIDED (Q5): one vanity alias per brain.** Change the uniqueness/scoping in `handleRequestAlias` from per-installation to per-brain so e.g. `work@` → Brain A and `home@` → Brain B.
 
 ### 5.7 Web clip (`/api/clip`) & bookmarklet (`/bookmarklet`) — **[change]**
 `src/index.ts:3060`+ (`/api/clip`), `:3090`+ (`/bookmarklet`), `src/clip.ts`
-- Today both do `SELECT id FROM installations WHERE user_id = ? LIMIT 1` → arbitrary brain. With multiple brains this must become deterministic:
-  - Accept an optional `brain`/`installation` field in the clip payload and a brain selector on the `/bookmarklet` page; **and/or**
-  - Resolve `getDefaultBrainForUser` (Intent Q3).
-- The bookmarklet build (`ui/bookmarklet/`) needs the target brain baked in or selectable; per-brain bookmarklets are the simplest (one bookmarklet per brain URL/token). This interacts with the iOS Shortcut PRD.
+- Today both do `SELECT id FROM installations WHERE user_id = ? LIMIT 1` → arbitrary brain. **DECIDED (Q3): resolve the user's designated default brain** (`getDefaultBrainForUser`) instead of `LIMIT 1`.
+- Also accept an optional explicit `brain`/`installation` field in the clip payload to override the default (lets a user target a non-default brain without changing their default).
+- `/bookmarklet` page: render the **default brain's** bookmarklet prominently, and offer the other brains' bookmarklets below (one bookmarklet per brain URL/token). This interacts with the iOS Shortcut PRD.
 
 ### 5.8 OAuth success / discovery surfaces — **[change]**
 `renderOAuthSuccessPage` (`src/index.ts:2641`+), `/bookmarklet` page
 - Replace the single-installation `LIMIT 1` lookup with **list all** of the user's brains and render one connect-block (MCP URL + copy button) per brain.
+- Add a **"Set as default"** control (radio per brain) wired to `setDefaultBrainForUser` — this is the surface where Q3's default is chosen. Mark the current default visibly.
 - This also fixes the present-tense bug where a personal+org user only ever sees one brain (BUG-7).
 
 ### 5.9 Debug & ops — **[change, small]**
@@ -211,48 +218,21 @@ While mapping the surfaces, I found several doc/code contradictions. Each is log
 
 ---
 
-## Intent Questions (resolve in a future session via AskUserQuestion)
+## 9. Decisions (locked 2026-06-20)
 
-These are **not** to be asked now. They are written so a future session can lift them directly into `AskUserQuestion`. Each lists options with a recommended default first.
+Captured via the interactive artifact (`docs/prd/003-multi-repo-support.html`) and confirmed by the owner. Recorded in [ADR-011](../adr/011-multi-repo-support.md).
 
-**Q1 — Brain granularity (gates the whole design).**
-What is the unit of a "brain"?
-- *Repo = separate brain (Recommended)* — each repo gets its own UUID/URL; fully isolated. Matches "access one, not the other." → Option A.
-- *Installation = one brain spanning its repos* — one URL, repos namespaced; search spans repos. → Option B.
-- *Let the user choose per repo at connect time* — brain is first-class; a repo can start a new brain or join an existing one. → Option C.
+| # | Question | Decision | vs. recommendation |
+|---|----------|----------|--------------------|
+| **Q1** | Brain granularity | **Repo = separate brain (Option A)** | ✅ as recommended |
+| **Q2** | Onboarding | **Auto-create a brain for every accessible repo** | ✅ as recommended |
+| **Q3** | Default write target (clip/bookmarklet) | **A user-designated default brain** | ⚠️ changed (rec. was per-brain target, no global default) |
+| **Q4** | Cross-brain search | **No — keep brains strictly isolated** | ✅ as recommended |
+| **Q5** | Vanity email alias scope | **One vanity alias per brain** | ✅ as recommended |
+| **Q6** | Brain naming | **Show `repo_full_name` as the label** (no nickname column) | ✅ as recommended |
+| **Q7** | Backfill previously-ignored repos | **Auto-create brains for them on deploy** | ✅ as recommended |
 
-**Q2 — Onboarding repo selection.**
-When an install grants access to multiple repos, what happens at setup?
-- *Auto-create a brain for every accessible repo (Recommended)* — simplest; user prunes later.
-- *Show a repo picker at setup* — user explicitly selects which repos become brains.
-- *Create a brain for the primary repo, others on demand* — closest to today; least surprising for existing users.
-
-**Q3 — Default write target for clip / bookmarklet / ambiguous email.**
-When a write isn't addressed to a specific brain, where does it go?
-- *Per-brain bookmarklet/clip target, no global default (Recommended)* — each bookmarklet/Shortcut carries its brain; no ambiguity.
-- *User-designated default brain* — one "default" flag; clips without a target go there.
-- *Most-recently-used brain* — implicit; convenient but surprising.
-- *Force explicit selection each time* — safest, most friction.
-
-**Q4 — Cross-brain search.**
-Should there be a way to search across all of a user's brains at once?
-- *No — keep brains strictly isolated (Recommended)* — matches the segregation requirement.
-- *Yes — an opt-in aggregate endpoint/tool* — convenience for power users, weakens isolation story.
-
-**Q5 — Vanity email alias scope.**
-Today one vanity alias per installation. With multiple brains?
-- *One vanity alias per brain (Recommended)* — e.g., `work@` → brain A, `home@` → brain B.
-- *Keep one vanity alias per GitHub account* — alias maps to the default brain only.
-
-**Q6 — Brain naming / UX.**
-How do users tell their brains apart?
-- *Show `repo_full_name` as the label (Recommended)* — zero extra UX, unambiguous.
-- *Add an optional editable nickname* — friendlier, adds a settings surface.
-
-**Q7 — Backfill of previously-ignored repos.**
-For existing installs where extra repos were never synced (only `repos[0]`):
-- *Auto-create brains for them on deploy (Recommended)* — heals the silent gap from BUG-6.
-- *Leave dormant; create only when the user re-runs setup or pushes* — no surprise new brains/URLs.
+**Implications of the Q3 deviation:** a `is_default_for_user` flag, a default-brain lifecycle (auto-default first brain; promote on delete), and a "Set as default" control on the OAuth success/brains page (§4, §5.7, §5.8). Clip/bookmarklet resolve the default instead of `LIMIT 1`, with an optional explicit override.
 
 ---
 
