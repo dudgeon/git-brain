@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Brainstem · Multi-Repo Support — Plan & Decisions</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>" />
+<style>
+  :root {
+    --indigo: #5a67d8;
+    --indigo-dark: #4c51bf;
+    --ink: #1a1a2e;
+    --muted: #6b6b7b;
+    --line: #e6e6ef;
+    --bg: #f7f7fb;
+    --card: #ffffff;
+    --green: #16834a;
+    --green-bg: #effdf4;
+    --green-line: #bbf7d0;
+    --amber-bg: #fef9ec;
+    --amber-line: #fde68a;
+    --amber-ink: #92590e;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 20px 160px; }
+  header.hero { margin-bottom: 8px; }
+  .eyebrow { font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--indigo); }
+  h1 { font-size: 2rem; margin: .35rem 0 .5rem; line-height: 1.2; }
+  h2 { font-size: 1.3rem; margin: 2.2rem 0 .8rem; padding-bottom: .4rem; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 1.4rem 0 .4rem; }
+  p { margin: .6rem 0; }
+  .lede { font-size: 1.12rem; color: #33334a; }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .85em; background: #f0f0f6; padding: 1px 6px; border-radius: 5px; }
+  a { color: var(--indigo); }
+  .muted { color: var(--muted); }
+
+  .callout { border-radius: var(--radius); padding: 16px 18px; margin: 1.2rem 0; border: 1px solid var(--line); background: var(--card); }
+  .callout.rec { background: var(--green-bg); border-color: var(--green-line); }
+  .callout.note { background: var(--amber-bg); border-color: var(--amber-line); }
+  .callout h3 { margin-top: 0; }
+  .callout.rec h3 { color: var(--green); }
+  .callout.note h3 { color: var(--amber-ink); }
+
+  .pill { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; vertical-align: middle; }
+  .pill.rec { background: var(--green); color: #fff; }
+  .pill.opt { background: #eef0fb; color: var(--indigo-dark); }
+
+  /* flow diagram */
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 1rem 0; }
+  .node { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; font-size: .9rem; box-shadow: 0 1px 2px rgba(20,20,50,.04); }
+  .node strong { display: block; font-size: .95rem; }
+  .node small { color: var(--muted); }
+  .arrow { color: var(--indigo); font-weight: 700; font-size: 1.2rem; }
+  .brainset { display: flex; flex-direction: column; gap: 6px; }
+  .node.brain { border-left: 3px solid var(--indigo); }
+
+  /* surface chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: .8rem 0; }
+  .chip { font-size: .82rem; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
+  .chip .tag { font-weight: 700; font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; margin-right: 6px; }
+  .chip.noop .tag { color: var(--green); }
+  .chip.change .tag { color: #b45309; }
+  .chip.new .tag { color: var(--indigo-dark); }
+
+  table.cmp { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .9rem; }
+  table.cmp th, table.cmp td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.cmp th { background: #f0f0f6; }
+  table.cmp tr:last-child td { border-bottom: none; }
+
+  /* decisions */
+  .q { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 18px 8px; margin: 1rem 0; box-shadow: 0 1px 3px rgba(20,20,50,.04); }
+  .q-head { display: flex; align-items: baseline; gap: 10px; }
+  .q-num { font-weight: 800; color: var(--indigo); font-size: .95rem; white-space: nowrap; }
+  .q-title { font-weight: 700; font-size: 1.05rem; }
+  .q-ctx { color: var(--muted); font-size: .9rem; margin: .3rem 0 .8rem; }
+  .opt { display: flex; gap: 11px; align-items: flex-start; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 9px; cursor: pointer; transition: border-color .12s, background .12s; }
+  .opt:hover { border-color: #c3c8ef; background: #fafaff; }
+  .opt input { margin-top: 3px; accent-color: var(--indigo); width: 16px; height: 16px; flex: none; }
+  .opt-body { flex: 1; }
+  .opt-label { font-weight: 600; }
+  .opt-desc { font-size: .86rem; color: var(--muted); }
+  .opt.checked { border-color: var(--indigo); background: #f4f5ff; }
+  .opt.checked.rec { border-color: var(--green); background: var(--green-bg); }
+
+  /* notes */
+  textarea#notes { width: 100%; min-height: 80px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-family: inherit; font-size: .95rem; resize: vertical; }
+
+  /* sticky action bar */
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,.96); backdrop-filter: blur(8px); border-top: 1px solid var(--line); box-shadow: 0 -2px 12px rgba(20,20,50,.06); }
+  .bar-inner { max-width: 880px; margin: 0 auto; padding: 12px 20px; display: flex; gap: 12px; align-items: center; }
+  .bar-summary { flex: 1; font-size: .82rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.copy { background: var(--indigo); color: #fff; border: none; border-radius: 10px; padding: 11px 20px; font-size: .95rem; font-weight: 700; cursor: pointer; transition: background .15s, transform .05s; white-space: nowrap; }
+  button.copy:hover { background: var(--indigo-dark); }
+  button.copy:active { transform: translateY(1px); }
+  button.copy.copied { background: var(--green); }
+  button.ghost { background: #fff; color: var(--indigo-dark); border: 1px solid var(--line); border-radius: 10px; padding: 11px 16px; font-weight: 600; cursor: pointer; }
+
+  .preview { margin-top: 1rem; }
+  .preview textarea { width: 100%; min-height: 220px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; line-height: 1.5; background: #fbfbfe; color: #2a2a40; }
+
+  .foot { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: .85rem; color: var(--muted); }
+  @media (max-width: 560px){ h1{font-size:1.6rem;} .bar-summary{display:none;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">🧠 Brainstem · PRD-003</div>
+    <h1>Multiple Repository Support</h1>
+    <p class="lede">Connect more than one repo and keep each as a separate, non-commingled brain — accessed one at a time, not merged. Below is the plan, the one decision that gates everything, and six follow-ups. Make your picks inline, then hit <strong>Copy my choices</strong> and paste them back to me.</p>
+  </header>
+
+  <div class="callout rec">
+    <h3>TL;DR — Recommended approach: <em>“Repo = Brain”</em> (Option A)</h3>
+    <p>Each connected repo becomes its own brain with its own UUID, MCP URL, storage, and search scope. Because almost everything already keys on the brain UUID (<code>brains/{uuid}/</code>), this reuses <strong>all</strong> existing per-brain isolation and leaves the entire MCP tool layer untouched. It directly matches “access one brain, not the other,” and it works even when both repos live under the same GitHub account.</p>
+  </div>
+
+  <h2>The problem (today)</h2>
+  <p>A “brain” is currently 1:1 with a GitHub <em>installation</em>, and setup only ever syncs the <strong>first</strong> repo (<code>repos[0]</code>). So you can’t add a second repo as its own isolated brain — and a few write surfaces already misbehave for anyone who owns more than one installation:</p>
+  <ul>
+    <li><strong>Only one repo syncs.</strong> Granting the App access to more repos silently does nothing.</li>
+    <li><strong>Arbitrary brain selection.</strong> Web clips, the bookmarklet page, and the OAuth success page all do <code>LIMIT 1</code> — non-deterministic which brain you get.</li>
+    <li><strong>Wrong-brain routing risk.</strong> Push and uninstall webhooks resolve by installation only, not by repo.</li>
+  </ul>
+
+  <h2>How Option A works</h2>
+  <div class="flow">
+    <div class="node"><strong>GitHub install</strong><small>one per account/org</small></div>
+    <span class="arrow">→</span>
+    <div class="node"><strong>3 repos granted</strong><small>repo-a · repo-b · repo-c</small></div>
+    <span class="arrow">→</span>
+    <div class="brainset">
+      <div class="node brain"><strong>Brain A</strong><small>/mcp/uuid-a · brains/uuid-a/</small></div>
+      <div class="node brain"><strong>Brain B</strong><small>/mcp/uuid-b · brains/uuid-b/</small></div>
+      <div class="node brain"><strong>Brain C</strong><small>/mcp/uuid-c · brains/uuid-c/</small></div>
+    </div>
+  </div>
+  <p class="muted">Each brain is fully isolated: separate R2 prefix, separate AI Search filter, separate email sub-address, separate clip target. You connect each as its own connector and use whichever you want.</p>
+
+  <h2>What actually changes</h2>
+  <p>The big win of Option A: the tool layer and isolation primitives are already per-brain. The work concentrates in onboarding, webhooks, and the three <code>LIMIT 1</code> surfaces.</p>
+  <div class="chips">
+    <span class="chip change"><span class="tag">change</span>Setup / onboarding (create N brains, not <code>repos[0]</code>)</span>
+    <span class="chip change"><span class="tag">change</span>Push webhook (resolve brain by repo)</span>
+    <span class="chip new"><span class="tag">new</span><code>installation_repositories</code> add/remove</span>
+    <span class="chip change"><span class="tag">change</span>Uninstall (delete all sibling brains)</span>
+    <span class="chip change"><span class="tag">change</span>OAuth success (list all brains)</span>
+    <span class="chip change"><span class="tag">change</span>Clip / bookmarklet routing</span>
+    <span class="chip noop"><span class="tag">no-op</span>MCP routing &amp; all 8 tools</span>
+    <span class="chip noop"><span class="tag">no-op</span>R2 / AI Search isolation</span>
+    <span class="chip noop"><span class="tag">no-op</span>Email routing (per-UUID)</span>
+    <span class="chip noop"><span class="tag">no-op</span><code>_brain_summary.json</code></span>
+  </div>
+
+  <h2>Option comparison</h2>
+  <table class="cmp">
+    <tr><th>Option</th><th>What it is</th><th>Fit for “don’t commingle”</th><th>Effort</th></tr>
+    <tr><td><strong>A · Repo = Brain</strong> <span class="pill rec">Rec</span></td><td>One brain (UUID/URL) per repo</td><td>✅ Exact fit</td><td>Low — tool layer untouched</td></tr>
+    <tr><td><strong>B · Install = Brain</strong></td><td>One brain spans repos, namespaced</td><td>❌ Data shares one search scope</td><td>High — rewrites every tool + R2 migration</td></tr>
+    <tr><td><strong>C · Both</strong></td><td>Brain is first-class; repo joins new or existing brain</td><td>✅ Flexible</td><td>Highest — A+B combined</td></tr>
+  </table>
+
+  <div class="callout note">
+    <h3>Also surfaced while planning (already logged to BACKLOG)</h3>
+    <p>Duplicate ADR-002 / ADR-004 file numbering; an OAuth ADR that promises multi-repo the code never delivered; AI Search cooldown documented as ~30s but commented as 3min; and a sample tool list showing 7 tools instead of 8. These are fixed separately from this feature.</p>
+  </div>
+
+  <h2>Your decisions</h2>
+  <p>Recommended options are pre-selected and marked <span class="pill rec">Rec</span>. Change anything you like — the summary at the bottom updates live.</p>
+
+  <div id="questions"></div>
+
+  <h3>Anything else?</h3>
+  <textarea id="notes" placeholder="Optional: constraints, preferences, or context I should factor in (e.g., 'the new repo is under an org', 'I want work + personal kept totally separate')…"></textarea>
+
+  <div class="preview">
+    <h3>Your choices (copyable)</h3>
+    <textarea id="out" readonly></textarea>
+  </div>
+
+  <div class="foot">
+    Source plan: <code>docs/prd/003-multi-repo-support.md</code> · This page: <code>docs/prd/003-multi-repo-support.html</code> · Draft PR #13.
+    Nothing here changes code — it records the decisions needed before implementation.
+  </div>
+
+</div>
+
+<div class="bar">
+  <div class="bar-inner">
+    <div class="bar-summary" id="barSummary">Pick your options above…</div>
+    <button class="ghost" id="resetBtn" type="button">Reset to recommended</button>
+    <button class="copy" id="copyBtn" type="button">Copy my choices</button>
+  </div>
+</div>
+
+<script>
+const QUESTIONS = [
+  {
+    id: "Q1", title: "Brain granularity — the decision that gates everything",
+    ctx: "What is the unit of a “brain”? This determines how much of the plan applies.",
+    options: [
+      { v: "Repo = separate brain (Option A)", rec: true, d: "Each repo gets its own UUID/MCP URL, fully isolated. Reuses all existing isolation; tool layer untouched." },
+      { v: "Installation = one brain spanning its repos (Option B)", d: "One URL, repos namespaced inside. Search spans repos. Does NOT keep data separate; high effort." },
+      { v: "Let me choose per repo at connect time (Option C)", d: "Brain is first-class; a repo can start a new brain or join an existing one. Most flexible, most work." },
+    ],
+  },
+  {
+    id: "Q2", title: "Onboarding — when an install grants multiple repos",
+    ctx: "What happens at setup when more than one repo is accessible?",
+    options: [
+      { v: "Auto-create a brain for every accessible repo", rec: true, d: "Simplest; prune later." },
+      { v: "Show a repo picker at setup", d: "You explicitly choose which repos become brains." },
+      { v: "Primary repo now, others on demand", d: "Closest to today; least surprising for existing installs." },
+    ],
+  },
+  {
+    id: "Q3", title: "Default write target — clip / bookmarklet / unaddressed email",
+    ctx: "When a write isn’t addressed to a specific brain, where does it land?",
+    options: [
+      { v: "Per-brain bookmarklet/clip target, no global default", rec: true, d: "Each bookmarklet/Shortcut carries its brain — zero ambiguity." },
+      { v: "A user-designated default brain", d: "One “default” flag; unaddressed writes go there." },
+      { v: "Most-recently-used brain", d: "Implicit and convenient, but can surprise." },
+      { v: "Force explicit selection each time", d: "Safest, most friction." },
+    ],
+  },
+  {
+    id: "Q4", title: "Cross-brain search",
+    ctx: "Should there be a way to search across all your brains at once?",
+    options: [
+      { v: "No — keep brains strictly isolated", rec: true, d: "Matches the segregation requirement." },
+      { v: "Yes — an opt-in aggregate search tool", d: "Convenient for power users; weakens the isolation story." },
+    ],
+  },
+  {
+    id: "Q5", title: "Vanity email alias scope",
+    ctx: "Today there’s one vanity alias per installation. With multiple brains?",
+    options: [
+      { v: "One vanity alias per brain", rec: true, d: "e.g. work@ → Brain A, home@ → Brain B." },
+      { v: "Keep one vanity alias per GitHub account", d: "Alias maps to the default brain only." },
+    ],
+  },
+  {
+    id: "Q6", title: "Brain naming / how you tell them apart",
+    ctx: "Labeling in the UI and success page.",
+    options: [
+      { v: "Show repo_full_name as the label", rec: true, d: "Zero extra UX, unambiguous." },
+      { v: "Add an optional editable nickname", d: "Friendlier; adds a small settings surface." },
+    ],
+  },
+  {
+    id: "Q7", title: "Backfill previously-ignored repos",
+    ctx: "For existing installs where extra repos were never synced (only repos[0]).",
+    options: [
+      { v: "Auto-create brains for them on deploy", rec: true, d: "Heals the silent single-repo gap." },
+      { v: "Leave dormant until I re-run setup or push", d: "No surprise new brains/URLs." },
+    ],
+  },
+];
+
+const state = {};
+const qRoot = document.getElementById("questions");
+
+QUESTIONS.forEach((q) => {
+  const recIdx = q.options.findIndex(o => o.rec);
+  state[q.id] = recIdx >= 0 ? recIdx : 0;
+
+  const card = document.createElement("div");
+  card.className = "q";
+  card.innerHTML = `<div class="q-head"><span class="q-num">${q.id}</span><span class="q-title">${q.title}</span></div><div class="q-ctx">${q.ctx}</div>`;
+
+  q.options.forEach((o, i) => {
+    const id = `${q.id}_${i}`;
+    const lab = document.createElement("label");
+    lab.className = "opt" + (o.rec ? " rec" : "");
+    lab.setAttribute("for", id);
+    lab.innerHTML =
+      `<input type="radio" name="${q.id}" id="${id}" value="${i}" ${i === state[q.id] ? "checked" : ""}>` +
+      `<span class="opt-body"><span class="opt-label">${o.v}</span> ${o.rec ? '<span class="pill rec">Rec</span>' : ''}` +
+      `<div class="opt-desc">${o.d}</div></span>`;
+    lab.querySelector("input").addEventListener("change", () => { state[q.id] = i; render(); });
+    card.appendChild(lab);
+  });
+  qRoot.appendChild(card);
+});
+
+document.getElementById("notes").addEventListener("input", render);
+
+function refreshChecked() {
+  QUESTIONS.forEach((q) => {
+    q.options.forEach((o, i) => {
+      const input = document.getElementById(`${q.id}_${i}`);
+      const lab = input.closest(".opt");
+      lab.classList.toggle("checked", i === state[q.id]);
+    });
+  });
+}
+
+function buildText() {
+  const lines = [];
+  lines.push("=== Brainstem Multi-Repo Decisions (PRD-003) ===");
+  lines.push("");
+  QUESTIONS.forEach((q) => {
+    const o = q.options[state[q.id]];
+    const isRec = o.rec ? " [recommended]" : " [changed from recommended]";
+    lines.push(`${q.id} — ${q.title.split(" — ")[0]}`);
+    lines.push(`   → ${o.v}${isRec}`);
+  });
+  const notes = document.getElementById("notes").value.trim();
+  lines.push("");
+  lines.push("Notes: " + (notes ? notes : "(none)"));
+  lines.push("");
+  lines.push("(Generated from docs/prd/003-multi-repo-support.html — paste back to Claude to proceed.)");
+  return lines.join("\n");
+}
+
+function render() {
+  refreshChecked();
+  const text = buildText();
+  document.getElementById("out").value = text;
+  const changed = QUESTIONS.filter(q => !q.options[state[q.id]].rec).length;
+  document.getElementById("barSummary").textContent =
+    changed === 0 ? "All 7 set to recommended — ready to copy." : `${changed} of 7 changed from recommended — ready to copy.`;
+}
+
+document.getElementById("copyBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("copyBtn");
+  const text = buildText();
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch (e) {
+    const out = document.getElementById("out");
+    out.focus(); out.select();
+    try { ok = document.execCommand("copy"); } catch (_) { ok = false; }
+  }
+  btn.textContent = ok ? "✓ Copied!" : "Select & copy below";
+  btn.classList.toggle("copied", ok);
+  setTimeout(() => { btn.textContent = "Copy my choices"; btn.classList.remove("copied"); }, 2200);
+});
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  QUESTIONS.forEach((q) => {
+    const recIdx = q.options.findIndex(o => o.rec);
+    state[q.id] = recIdx >= 0 ? recIdx : 0;
+    const input = document.getElementById(`${q.id}_${state[q.id]}`);
+    if (input) input.checked = true;
+  });
+  document.getElementById("notes").value = "";
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
