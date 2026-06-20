@@ -1,6 +1,6 @@
 # Product Backlog
 
-**Last updated:** 2026-02-16
+**Last updated:** 2026-06-20
 
 ---
 
@@ -115,9 +115,21 @@ Installations are only linked to users on first OAuth (by matching GitHub login)
 
 **Fix:** Either require OAuth before App installation, or request user identity during the App installation callback.
 
-### Multi-repo support
+### Multi-repo support → [PRD-003](prd/003-multi-repo-support.md)
 
-GitHub Apps can be installed on multiple repos, but only the first repo is synced. Supporting multiple repos requires storing the repo list, prefixing R2 paths by repo, and scoping MCP tools per repo.
+GitHub Apps can be installed on multiple repos, but only the first repo is synced (`src/index.ts:1609`, `// For MVP, use the first repo`). A user cannot connect a second repo as a separate, isolated brain — especially not under the same GitHub account.
+
+Full plan, surface-by-surface, in [PRD-003](prd/003-multi-repo-support.md). Recommended approach (**Option A**): treat each repo as its own brain (UUID/MCP URL), which reuses all existing per-brain isolation (R2, AI Search, email, clip) and leaves the tool layer untouched. The PRD also enumerates the unresolved **intent questions** (brain granularity, default write target, vanity-alias scope, backfill) to settle before building.
+
+### [BUG] Write surfaces pick an arbitrary brain when a user owns more than one
+
+Discovered while planning [PRD-003](prd/003-multi-repo-support.md). The OAuth success page (`src/index.ts:2643`), `/bookmarklet` page (`:3095`), and `/api/clip` (`:3072`) all resolve the user's installation with `SELECT id FROM installations WHERE user_id = ? LIMIT 1`. This is **already** non-deterministic today for any user who owns more than one installation (e.g., one on their personal account + one on an org): web clips can land in an unintended brain, and the success page hides the other brain's URL.
+
+**Fix:** subsumed by PRD-003 §5.7–§5.8 (list all brains on the success page; route clips to a deterministic/default/explicit brain). Tracked here because it affects multi-install users **before** multi-repo ships.
+
+### [BUG] Stated multi-repo OAuth goal contradicts implementation
+
+`adr/002-oauth-authentication.md` lists a design goal: *"Support multi-repo access (one token for all user's installations)."* The implementation contradicts it — setup syncs only `repos[0]` and the surfaces above use `LIMIT 1`. Resolved by PRD-003. Documented here so the ADR's stated goal isn't mistaken for current behavior.
 
 ### Chunking strategy improvements → [ADR-010](adr/010-chunking-strategy.md)
 
@@ -182,6 +194,17 @@ description += `\n\nReturns relevant passages with source document links. For co
 ```
 
 This helps Claude understand the search → retrieve workflow and when to fetch full context.
+
+### [BUG] Documentation contradictions & doc-hygiene fixes
+
+Found while mapping surfaces for [PRD-003](prd/003-multi-repo-support.md) (full list in PRD §8):
+
+- **Duplicate ADR-002 files** — `adr/002-security-isolation.md` and `adr/002-oauth-authentication.md` share a number; the "Related documents" index only lists the former, orphaning the latter.
+- **Duplicate ADR-004 files** — `adr/004-mcp-apps-ui.md` and `adr/004-chatgpt-app.md` collide. The label "ADR-004" resolves to different docs by context (CLAUDE.md → mcp-apps-ui; `tasks/003` → chatgpt-app). BACKLOG calls them "ADR-004a/004b" but the filenames still clash.
+- **AI Search cooldown mismatch** — CLAUDE.md ("AI Search Reindex API") says **~30s**; code comments (`src/index.ts:2016`, `syncChangedFiles`) say **3 minutes**. Reconcile to the true value.
+- **Tool count mismatch** — CLAUDE.md "Test Script Output" sample lists **7** tools (omits `brain_inbox_save`) while the rest of the doc says **8**. Update the sample output.
+
+**Fix:** renumber one ADR-002 and one ADR-004 (or adopt explicit `a/b` suffixes in filenames), correct the cooldown figure, and refresh the sample tool list. Low-risk, docs-only.
 
 ### ScopedR2 / ScopedAISearch wrappers
 
@@ -254,6 +277,7 @@ Items completed in v4.0-v4.3, for changelog reference:
 - [ADR-004b: ChatGPT App Directory](adr/004-chatgpt-app.md)
 - [ADR-005: ChatGPT App Shared Core](adr/005-chatgpt-app.md)
 - [Tasks-003: ChatGPT App Submission](tasks/003-chatgpt-app.md)
+- [PRD-003: Multiple Repository Support](prd/003-multi-repo-support.md)
 - [ADR-008: Email Input](adr/008-email-input.md)
 - [ADR-009: MCP Apps Compatibility](adr/009-mcp-apps-compatibility.md)
 - [ADR-010: Chunking Strategy](adr/010-chunking-strategy.md)
